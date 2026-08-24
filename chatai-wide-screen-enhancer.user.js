@@ -2,8 +2,8 @@
 // @name         AI 宽屏优化
 // @namespace    https://github.com/NBSOD/chatai-wide-screen-enhancer
 // @author       deepseek-v4-flash
-// @version      1.1.0
-// @description  Gemini 和 DeepSeek 网页端宽屏 + 表格/代码显示优化
+// @version      1.2.0
+// @description  Gemini 和 DeepSeek 网页端宽屏 + 表格显示优化
 // @match        *://chat.deepseek.com/*
 // @match        *://gemini.google.com/*
 // @grant        GM_getValue
@@ -18,7 +18,6 @@
     const CONFIG = {
         wideMode: GM_getValue('wideMode', true),
         wideTable: GM_getValue('wideTable', true),
-        prettyCode: GM_getValue('prettyCode', true),
     };
 
     const PLATFORM = (() => {
@@ -34,7 +33,6 @@
             content: ['.max-w-4xl', '.max-w-3xl', '[class*="max-w-"]', '.ds-markdown', '.md-content'],
             container: ['.d850f6a0', 'main', '.flex-1', '[class*="overflow-auto"]'],
             message: ['[class*="message"]', '[class*="conversation"]', '[class*="ds-chat"]'],
-            code: ['pre code', 'pre', '.ds-markdown pre'],
             extraCSS: `
                 .ds-markdown, .md-content, [class*="markdown"] {
                     max-width: 100% !important;
@@ -54,30 +52,7 @@
             content: ['.response-container', '.conversation-container', '[class*="max-w-"]'],
             container: ['main', '.conversation-container', '[class*="conversation"]'],
             message: ['.message', '.response-content', '[class*="message"]'],
-            code: ['pre code', 'pre', 'code[class*="hljs"]', 'div[class*="code"] code', '[class*="code-block"] code'],
-            extraCSS: `
-                /* Gemini 代码块：兼容非 <pre> 包裹的结构 */
-                pre, [class*="code-block"], [class*="code-container"] {
-                    background: #f5f5f5 !important;
-                    border: 1px solid #e0e0e0 !important;
-                    border-radius: 6px !important;
-                    padding: 1em !important;
-                    overflow-x: auto !important;
-                }
-                pre code, [class*="code-block"] code, [class*="code-container"] code {
-                    background: transparent !important;
-                    color: #1a1a1a !important;
-                }
-                @media (prefers-color-scheme: dark) {
-                    pre, [class*="code-block"], [class*="code-container"] {
-                        background: #1e1e1e !important;
-                        border-color: #333 !important;
-                    }
-                    pre code, [class*="code-block"] code, [class*="code-container"] code {
-                        color: #e0e0e0 !important;
-                    }
-                }
-            `,
+            extraCSS: '',
         },
     };
 
@@ -146,40 +121,6 @@
             `);
         }
 
-        if (CONFIG.prettyCode) {
-            css.push(`
-                ${S.code.join(',\n')} {
-                    font-family: 'Consolas', 'Monaco', 'Courier New', monospace !important;
-                    font-size: 0.9em !important;
-                    line-height: 1.5 !important;
-                }
-                pre, [class*="code-block"], [class*="code-container"] {
-                    border-radius: 6px !important;
-                    padding: 1em !important;
-                    margin: 1em 0 !important;
-                    overflow-x: auto !important;
-                    max-width: 100% !important;
-                    background: #f5f5f5 !important;
-                    border: 1px solid #e0e0e0 !important;
-                }
-                pre code, [class*="code-block"] code, [class*="code-container"] code {
-                    background: transparent !important;
-                    padding: 0 !important;
-                    border: none !important;
-                    color: #1a1a1a !important;
-                }
-                @media (prefers-color-scheme: dark) {
-                    pre, [class*="code-block"], [class*="code-container"] {
-                        background: #1e1e1e !important;
-                        border-color: #333 !important;
-                    }
-                    pre code, [class*="code-block"] code, [class*="code-container"] code {
-                        color: #e0e0e0 !important;
-                    }
-                }
-            `);
-        }
-
         if (S.extraCSS) {
             css.push(S.extraCSS);
         }
@@ -227,7 +168,6 @@
             <div class="body">
                 <label><span>📐 宽屏</span><input type="checkbox" data-key="wideMode" ${CONFIG.wideMode ? 'checked' : ''}></label>
                 <label><span>📊 表格加宽</span><input type="checkbox" data-key="wideTable" ${CONFIG.wideTable ? 'checked' : ''}></label>
-                <label><span>💻 代码美化</span><input type="checkbox" data-key="prettyCode" ${CONFIG.prettyCode ? 'checked' : ''}></label>
             </div>
         `;
 
