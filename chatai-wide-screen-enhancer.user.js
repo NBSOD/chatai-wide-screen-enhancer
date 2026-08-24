@@ -2,7 +2,7 @@
 // @name         AI 宽屏优化
 // @namespace    https://github.com/NBSOD/chatai-wide-screen-enhancer
 // @author       deepseek-v4-flash
-// @version      1.0.4
+// @version      1.0.5
 // @description  Gemini 和 DeepSeek 网页端宽屏 + 表格显示优化 + 自动折叠深度思考
 // @match        *://chat.deepseek.com/*
 // @match        *://gemini.google.com/*
@@ -61,6 +61,15 @@
 
     function injectStyles() {
         const css = [];
+
+        if (CONFIG.collapseThinking && PLATFORM === 'deepseek') {
+            css.push(`
+                /* 预先隐藏思考内容，用户点击标题栏时释放 */
+                [data-ai-hide-think] > div:last-child {
+                    display: none !important;
+                }
+            `);
+        }
 
         if (CONFIG.wideMode) {
             const maxW = 'none';
@@ -163,31 +172,36 @@
     function collapseDeepThink() {
         if (!CONFIG.collapseThinking || PLATFORM !== 'deepseek') return;
 
-        // 策略: 查找包含 "已思考" 文本的模块，点击折叠按钮
         const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT, null, false);
         let node;
         while (node = walker.nextNode()) {
             const t = node.textContent.trim();
-            // 匹配 "已思考（用时 X 秒）" 或类似文本
             if (t.includes('已思考') && t.includes('用时') && t.includes('秒')) {
-                // 找到标题栏 (header div，包含 图标 + 文本 + chevron 三个子元素)
                 const header = node.parentElement?.closest('div');
                 if (!header || header.dataset?.aiCollapsed === '1') continue;
 
-                // 找到容器 (header 的父级)
                 const container = header.parentElement;
                 if (!container) continue;
 
-                // 折叠按钮是标题栏里最后一个 ds-icon (带 chevron 图标的 div)
+                // 给容器打上标记，CSS 立即隐藏思考内容（渲染前生效）
+                container.setAttribute('data-ai-hide-think', '1');
+
+                // 点击 chevron 折叠（让 DeepSeek 记录状态）
                 const icons = header.querySelectorAll(':scope > .ds-icon');
                 const toggleBtn = icons[icons.length - 1];
                 if (toggleBtn) {
-                    console.log('[AI 增强] 点击折叠按钮, 容器:', container.className);
                     toggleBtn.click();
                     header.dataset.aiCollapsed = '1';
                     container.dataset.aiCollapsed = '1';
-                    return;
                 }
+
+                // 点击标题栏时释放 CSS 隐藏，让 DeepSeek 的展开/折叠正常工作
+                header.addEventListener('click', function release(e) {
+                    // 如果点的是 chevron 本身，让 DeepSeek 处理
+                    if (e.target.closest('.ds-icon')) return;
+                    container.removeAttribute('data-ai-hide-think');
+                    header.removeEventListener('click', release);
+                }, { once: true });
             }
         }
     }
