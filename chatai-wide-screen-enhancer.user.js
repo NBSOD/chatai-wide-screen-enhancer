@@ -2,7 +2,7 @@
 // @name         AI 宽屏优化
 // @namespace    https://github.com/NBSOD/chatai-wide-screen-enhancer
 // @author       deepseek-v4-flash
-// @version      1.0.5
+// @version      1.0.6
 // @description  Gemini 和 DeepSeek 网页端宽屏 + 表格显示优化 + 自动折叠深度思考
 // @match        *://chat.deepseek.com/*
 // @match        *://gemini.google.com/*
@@ -159,51 +159,68 @@
     let _collapseTimer = null;
 
     function observeDOM() {
-        const observer = new MutationObserver(() => {
+        const observer = new MutationObserver((mutations) => {
             wrapTables();
             if (CONFIG.collapseThinking && PLATFORM === 'deepseek') {
                 clearTimeout(_collapseTimer);
+
+                // 在新增节点中尽早捕获思考容器（不等"已思考"文本）
+                for (const mutation of mutations) {
+                    for (const node of mutation.addedNodes) {
+                        if (node.nodeType === 1) {
+                            hideThinkingEarly(node);
+                        }
+                    }
+                }
+
                 _collapseTimer = setTimeout(collapseDeepThink, 200);
             }
         });
         observer.observe(document.body, { childList: true, subtree: true });
     }
 
+    function hideThinkingEarly(root) {
+        // 特征：一个 div 的第一个子 div 里包含 .ds-icon，且有至少 2 个子元素
+        const check = (el) => {
+            if (el.children.length >= 2 && !el.hasAttribute('data-ai-hide-think')) {
+                const first = el.children[0];
+                if (first.querySelector && first.querySelector('.ds-icon')) {
+                    el.setAttribute('data-ai-hide-think', '1');
+                }
+            }
+        };
+
+        if (root.tagName === 'DIV') check(root);
+        if (root.querySelectorAll) {
+            root.querySelectorAll('div').forEach(check);
+        }
+    }
+
     function collapseDeepThink() {
         if (!CONFIG.collapseThinking || PLATFORM !== 'deepseek') return;
 
-        const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT, null, false);
-        let node;
-        while (node = walker.nextNode()) {
-            const t = node.textContent.trim();
-            if (t.includes('已思考') && t.includes('用时') && t.includes('秒')) {
-                const header = node.parentElement?.closest('div');
-                if (!header || header.dataset?.aiCollapsed === '1') continue;
+        // 对已标记的容器，点击 chevron 折叠 + 添加点击释放
+        document.querySelectorAll('[data-ai-hide-think]').forEach(container => {
+            if (container.dataset?.aiCollapsed === '1') return;
 
-                const container = header.parentElement;
-                if (!container) continue;
+            const header = container.children[0];
+            if (!header) return;
 
-                // 给容器打上标记，CSS 立即隐藏思考内容（渲染前生效）
-                container.setAttribute('data-ai-hide-think', '1');
-
-                // 点击 chevron 折叠（让 DeepSeek 记录状态）
-                const icons = header.querySelectorAll(':scope > .ds-icon');
-                const toggleBtn = icons[icons.length - 1];
-                if (toggleBtn) {
-                    toggleBtn.click();
-                    header.dataset.aiCollapsed = '1';
-                    container.dataset.aiCollapsed = '1';
-                }
-
-                // 点击标题栏时释放 CSS 隐藏，让 DeepSeek 的展开/折叠正常工作
-                header.addEventListener('click', function release(e) {
-                    // 如果点的是 chevron 本身，让 DeepSeek 处理
-                    if (e.target.closest('.ds-icon')) return;
-                    container.removeAttribute('data-ai-hide-think');
-                    header.removeEventListener('click', release);
-                }, { once: true });
+            const icons = header.querySelectorAll(':scope > .ds-icon');
+            const toggleBtn = icons[icons.length - 1];
+            if (toggleBtn) {
+                toggleBtn.click();
+                container.dataset.aiCollapsed = '1';
+                header.dataset.aiCollapsed = '1';
             }
-        }
+
+            // 点击标题栏释放 CSS 隐藏
+            header.addEventListener('click', function release(e) {
+                if (e.target.closest('.ds-icon')) return;
+                container.removeAttribute('data-ai-hide-think');
+                header.removeEventListener('click', release);
+            }, { once: true });
+        });
     }
 
     function createPanel() {
