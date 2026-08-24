@@ -2,7 +2,7 @@
 // @name         AI 宽屏优化
 // @namespace    https://github.com/NBSOD/chatai-wide-screen-enhancer
 // @author       deepseek-v4-flash
-// @version      1.0.6
+// @version      1.0.7
 // @description  Gemini 和 DeepSeek 网页端宽屏 + 表格显示优化 + 自动折叠深度思考
 // @match        *://chat.deepseek.com/*
 // @match        *://gemini.google.com/*
@@ -180,11 +180,12 @@
     }
 
     function hideThinkingEarly(root) {
-        // 特征：一个 div 的第一个子 div 里包含 .ds-icon，且有至少 2 个子元素
+        // 特征：一个 div 的第一个子 div 里直接包含 .ds-icon（不嵌套在按钮内部），且有至少 2 个子元素
         const check = (el) => {
             if (el.children.length >= 2 && !el.hasAttribute('data-ai-hide-think')) {
                 const first = el.children[0];
-                if (first.querySelector && first.querySelector('.ds-icon')) {
+                // 必须 .ds-icon 是直接子元素，防止误杀弹窗（弹窗的 .ds-icon 在按钮里）
+                if (first.querySelector && first.querySelector(':scope > .ds-icon')) {
                     el.setAttribute('data-ai-hide-think', '1');
                 }
             }
