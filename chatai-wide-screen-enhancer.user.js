@@ -123,16 +123,8 @@
         }
 
         if (CONFIG.collapseThinking && PLATFORM === 'deepseek') {
-            css.push(`
-                /* 折叠深度思考过程：只隐藏思考内容区，保留标题行 */
-                [class*="ds-think"] > div:not(:first-child),
-                [class*="ds-think"] [class*="content"],
-                [class*="ds-think"] [class*="body"],
-                [class*="think-container"] > div:not(:first-child),
-                [class*="ds-reason"] > div:not(:first-child) {
-                    display: none !important;
-                }
-            `);
+            // 保留折叠按钮可见，但让思考内容区域窄一点，为 JS 点击折叠做准备
+            // 实际折叠由 collapseDeepThink() 通过点击按钮完成
         }
 
         if (S.extraCSS) {
@@ -178,14 +170,26 @@
 
         let found = false;
 
-        // 策略 1: 通过 class 名称查找思考模块 (ds-think / ds-reason / think-container ...)
-        document.querySelectorAll('[class*="ds-think"],[class*="ds-reason"],[class*="think-container"],[class*="thought"]').forEach(section => {
+        // 调试：打印所有可能包含思考模块的元素
+        const allCandidates = document.querySelectorAll('[class*="think"],[class*="reason"],[class*="thought"],[class*="mind"]');
+        if (allCandidates.length) {
+            console.log('[AI 增强] 找到候选模块:', allCandidates.length);
+            allCandidates.forEach((el, i) => {
+                console.log(`  [${i}]`, el.tagName, el.className, el.dataset?.aiCollapsed || '');
+            });
+        }
+
+        // 策略 1: 通过 class 名称查找思考模块
+        allCandidates.forEach(section => {
             if (section.dataset?.aiCollapsed === '1') return;
             const btn = section.querySelector('button') || section.querySelector('[class*="toggle"]') || section.querySelector('[class*="chevron"]');
             if (btn) {
+                console.log('[AI 增强] 点击折叠按钮:', btn);
                 btn.click();
                 section.dataset.aiCollapsed = '1';
                 found = true;
+            } else {
+                console.log('[AI 增强] 找到模块但未找到按钮:', section.className);
             }
         });
 
@@ -196,13 +200,22 @@
         let node;
         while (node = walker.nextNode()) {
             const t = node.textContent.trim();
-            if ((t.includes('深度思考') || t.includes('思考过程')) && t.length < 20) {
-                const section = node.parentElement?.closest('[class*="think"],[class*="reason"]') || node.parentElement?.parentElement;
+            if ((t.includes('深度思考') || t.includes('思考过程') || t.includes('思考')) && t.length < 20) {
+                console.log('[AI 增强] 找到文本:', t);
+                const section = node.parentElement?.closest('[class*="think"],[class*="reason"],[class*="thought"]') || node.parentElement?.parentElement;
                 if (section && section.dataset?.aiCollapsed !== '1') {
+                    console.log('[AI 增强] 定位到模块:', section.tagName, section.className);
+                    const btns = section.querySelectorAll('button');
+                    console.log('[AI 增强] 模块内按钮数:', btns.length);
+                    btns.forEach(b => console.log('  button:', b.textContent?.trim(), b.className));
                     const btn = section.querySelector('button');
                     if (btn) { btn.click(); section.dataset.aiCollapsed = '1'; found = true; }
                 }
             }
+        }
+
+        if (!found) {
+            console.log('[AI 增强] ⚠️ 未找到思考模块，请在页面截图发给我');
         }
     }
 
