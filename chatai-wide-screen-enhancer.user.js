@@ -53,8 +53,30 @@
             content: ['.response-container', '.conversation-container', '[class*="max-w-"]'],
             container: ['main', '.conversation-container', '[class*="conversation"]'],
             message: ['.message', '.response-content', '[class*="message"]'],
-            code: ['pre code', 'pre'],
-            extraCSS: '',
+            code: ['pre code', 'pre', 'code[class*="hljs"]', 'div[class*="code"] code', '[class*="code-block"] code'],
+            extraCSS: `
+                /* Gemini 代码块：兼容非 <pre> 包裹的结构 */
+                pre, [class*="code-block"], [class*="code-container"] {
+                    background: #f5f5f5 !important;
+                    border: 1px solid #e0e0e0 !important;
+                    border-radius: 6px !important;
+                    padding: 1em !important;
+                    overflow-x: auto !important;
+                }
+                pre code, [class*="code-block"] code, [class*="code-container"] code {
+                    background: transparent !important;
+                    color: #1a1a1a !important;
+                }
+                @media (prefers-color-scheme: dark) {
+                    pre, [class*="code-block"], [class*="code-container"] {
+                        background: #1e1e1e !important;
+                        border-color: #333 !important;
+                    }
+                    pre code, [class*="code-block"] code, [class*="code-container"] code {
+                        color: #e0e0e0 !important;
+                    }
+                }
+            `,
         },
     };
 
@@ -130,7 +152,7 @@
                     font-size: 0.9em !important;
                     line-height: 1.5 !important;
                 }
-                pre {
+                pre, [class*="code-block"], [class*="code-container"] {
                     border-radius: 6px !important;
                     padding: 1em !important;
                     margin: 1em 0 !important;
@@ -139,15 +161,19 @@
                     background: #f5f5f5 !important;
                     border: 1px solid #e0e0e0 !important;
                 }
-                pre code {
+                pre code, [class*="code-block"] code, [class*="code-container"] code {
                     background: transparent !important;
                     padding: 0 !important;
                     border: none !important;
+                    color: #1a1a1a !important;
                 }
                 @media (prefers-color-scheme: dark) {
-                    pre {
+                    pre, [class*="code-block"], [class*="code-container"] {
                         background: #1e1e1e !important;
                         border-color: #333 !important;
+                    }
+                    pre code, [class*="code-block"] code, [class*="code-container"] code {
+                        color: #e0e0e0 !important;
                     }
                 }
             `);
