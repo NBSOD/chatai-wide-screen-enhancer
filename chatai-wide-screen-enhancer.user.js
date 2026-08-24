@@ -2,7 +2,7 @@
 // @name         AI 宽屏优化
 // @namespace    https://github.com/NBSOD/chatai-wide-screen-enhancer
 // @author       deepseek-v4-flash
-// @version      1.3.0
+// @version      1.0.3
 // @description  Gemini 和 DeepSeek 网页端宽屏 + 表格显示优化 + 自动折叠深度思考
 // @match        *://chat.deepseek.com/*
 // @match        *://gemini.google.com/*
