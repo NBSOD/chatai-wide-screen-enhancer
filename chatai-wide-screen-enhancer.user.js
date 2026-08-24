@@ -122,11 +122,6 @@
             `);
         }
 
-        if (CONFIG.collapseThinking && PLATFORM === 'deepseek') {
-            // 保留折叠按钮可见，但让思考内容区域窄一点，为 JS 点击折叠做准备
-            // 实际折叠由 collapseDeepThink() 通过点击按钮完成
-        }
-
         if (S.extraCSS) {
             css.push(S.extraCSS);
         }
@@ -168,54 +163,32 @@
     function collapseDeepThink() {
         if (!CONFIG.collapseThinking || PLATFORM !== 'deepseek') return;
 
-        let found = false;
-
-        // 调试：打印所有可能包含思考模块的元素
-        const allCandidates = document.querySelectorAll('[class*="think"],[class*="reason"],[class*="thought"],[class*="mind"]');
-        if (allCandidates.length) {
-            console.log('[AI 增强] 找到候选模块:', allCandidates.length);
-            allCandidates.forEach((el, i) => {
-                console.log(`  [${i}]`, el.tagName, el.className, el.dataset?.aiCollapsed || '');
-            });
-        }
-
-        // 策略 1: 通过 class 名称查找思考模块
-        allCandidates.forEach(section => {
-            if (section.dataset?.aiCollapsed === '1') return;
-            const btn = section.querySelector('button') || section.querySelector('[class*="toggle"]') || section.querySelector('[class*="chevron"]');
-            if (btn) {
-                console.log('[AI 增强] 点击折叠按钮:', btn);
-                btn.click();
-                section.dataset.aiCollapsed = '1';
-                found = true;
-            } else {
-                console.log('[AI 增强] 找到模块但未找到按钮:', section.className);
-            }
-        });
-
-        if (found) return;
-
-        // 策略 2: 通过文本 "深度思考" 定位兜底
+        // 策略: 查找包含 "已思考" 文本的模块，点击折叠按钮
         const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT, null, false);
         let node;
         while (node = walker.nextNode()) {
             const t = node.textContent.trim();
-            if ((t.includes('深度思考') || t.includes('思考过程') || t.includes('思考')) && t.length < 20) {
-                console.log('[AI 增强] 找到文本:', t);
-                const section = node.parentElement?.closest('[class*="think"],[class*="reason"],[class*="thought"]') || node.parentElement?.parentElement;
-                if (section && section.dataset?.aiCollapsed !== '1') {
-                    console.log('[AI 增强] 定位到模块:', section.tagName, section.className);
-                    const btns = section.querySelectorAll('button');
-                    console.log('[AI 增强] 模块内按钮数:', btns.length);
-                    btns.forEach(b => console.log('  button:', b.textContent?.trim(), b.className));
-                    const btn = section.querySelector('button');
-                    if (btn) { btn.click(); section.dataset.aiCollapsed = '1'; found = true; }
+            // 匹配 "已思考（用时 X 秒）" 或类似文本
+            if (t.includes('已思考') && t.includes('用时') && t.includes('秒')) {
+                // 找到标题栏 (header div，包含 图标 + 文本 + chevron 三个子元素)
+                const header = node.parentElement?.closest('div');
+                if (!header || header.dataset?.aiCollapsed === '1') continue;
+
+                // 找到容器 (header 的父级)
+                const container = header.parentElement;
+                if (!container) continue;
+
+                // 折叠按钮是标题栏里最后一个 ds-icon (带 chevron 图标的 div)
+                const icons = header.querySelectorAll(':scope > .ds-icon');
+                const toggleBtn = icons[icons.length - 1];
+                if (toggleBtn) {
+                    console.log('[AI 增强] 点击折叠按钮, 容器:', container.className);
+                    toggleBtn.click();
+                    header.dataset.aiCollapsed = '1';
+                    container.dataset.aiCollapsed = '1';
+                    return;
                 }
             }
-        }
-
-        if (!found) {
-            console.log('[AI 增强] ⚠️ 未找到思考模块，请在页面截图发给我');
         }
     }
 
