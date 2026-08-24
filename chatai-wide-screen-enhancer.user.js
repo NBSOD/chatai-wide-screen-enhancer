@@ -2,8 +2,8 @@
 // @name         AI 宽屏优化
 // @namespace    https://github.com/NBSOD/chatai-wide-screen-enhancer
 // @author       deepseek-v4-flash
-// @version      1.2.0
-// @description  Gemini 和 DeepSeek 网页端宽屏 + 表格显示优化
+// @version      1.3.0
+// @description  Gemini 和 DeepSeek 网页端宽屏 + 表格显示优化 + 自动折叠深度思考
 // @match        *://chat.deepseek.com/*
 // @match        *://gemini.google.com/*
 // @grant        GM_getValue
@@ -18,6 +18,7 @@
     const CONFIG = {
         wideMode: GM_getValue('wideMode', true),
         wideTable: GM_getValue('wideTable', true),
+        collapseThinking: GM_getValue('collapseThinking', true),
     };
 
     const PLATFORM = (() => {
@@ -121,6 +122,19 @@
             `);
         }
 
+        if (CONFIG.collapseThinking && PLATFORM === 'deepseek') {
+            css.push(`
+                /* 折叠深度思考过程：只隐藏思考内容区，保留标题行 */
+                [class*="ds-think"] > div:not(:first-child),
+                [class*="ds-think"] [class*="content"],
+                [class*="ds-think"] [class*="body"],
+                [class*="think-container"] > div:not(:first-child),
+                [class*="ds-reason"] > div:not(:first-child) {
+                    display: none !important;
+                }
+            `);
+        }
+
         if (S.extraCSS) {
             css.push(S.extraCSS);
         }
@@ -146,11 +160,50 @@
         });
     }
 
+    let _collapseTimer = null;
+
     function observeDOM() {
         const observer = new MutationObserver(() => {
             wrapTables();
+            if (CONFIG.collapseThinking && PLATFORM === 'deepseek') {
+                clearTimeout(_collapseTimer);
+                _collapseTimer = setTimeout(collapseDeepThink, 200);
+            }
         });
         observer.observe(document.body, { childList: true, subtree: true });
+    }
+
+    function collapseDeepThink() {
+        if (!CONFIG.collapseThinking || PLATFORM !== 'deepseek') return;
+
+        let found = false;
+
+        // 策略 1: 通过 class 名称查找思考模块 (ds-think / ds-reason / think-container ...)
+        document.querySelectorAll('[class*="ds-think"],[class*="ds-reason"],[class*="think-container"],[class*="thought"]').forEach(section => {
+            if (section.dataset?.aiCollapsed === '1') return;
+            const btn = section.querySelector('button') || section.querySelector('[class*="toggle"]') || section.querySelector('[class*="chevron"]');
+            if (btn) {
+                btn.click();
+                section.dataset.aiCollapsed = '1';
+                found = true;
+            }
+        });
+
+        if (found) return;
+
+        // 策略 2: 通过文本 "深度思考" 定位兜底
+        const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT, null, false);
+        let node;
+        while (node = walker.nextNode()) {
+            const t = node.textContent.trim();
+            if ((t.includes('深度思考') || t.includes('思考过程')) && t.length < 20) {
+                const section = node.parentElement?.closest('[class*="think"],[class*="reason"]') || node.parentElement?.parentElement;
+                if (section && section.dataset?.aiCollapsed !== '1') {
+                    const btn = section.querySelector('button');
+                    if (btn) { btn.click(); section.dataset.aiCollapsed = '1'; found = true; }
+                }
+            }
+        }
     }
 
     function createPanel() {
@@ -168,6 +221,7 @@
             <div class="body">
                 <label><span>📐 宽屏</span><input type="checkbox" data-key="wideMode" ${CONFIG.wideMode ? 'checked' : ''}></label>
                 <label><span>📊 表格加宽</span><input type="checkbox" data-key="wideTable" ${CONFIG.wideTable ? 'checked' : ''}></label>
+                <label><span>🧠 折叠深度思考</span><input type="checkbox" data-key="collapseThinking" ${CONFIG.collapseThinking ? 'checked' : ''}></label>
             </div>
         `;
 
@@ -271,12 +325,18 @@
         if (old) old.remove();
         injectStyles();
         wrapTables();
+        if (CONFIG.collapseThinking && PLATFORM === 'deepseek') {
+            setTimeout(collapseDeepThink, 300);
+        }
     }
 
     function init() {
         console.log('[AI 宽屏优化] 平台:', PLATFORM);
         injectStyles();
         setTimeout(wrapTables, 500);
+        if (CONFIG.collapseThinking && PLATFORM === 'deepseek') {
+            setTimeout(collapseDeepThink, 800);
+        }
         observeDOM();
         createPanel();
     }
