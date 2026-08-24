@@ -1,7 +1,8 @@
 // ==UserScript==
 // @name         AI 宽屏优化
-// @namespace    https://github.com/your-username/ai-wide-screen-enhancer
-// @version      1.0.0
+// @namespace    https://github.com/NBSOD/chatai-wide-screen-enhancer
+// @author       deepseek-v4-flash
+// @version      1.1.0
 // @description  Gemini 和 DeepSeek 网页端宽屏 + 表格/代码显示优化
 // @match        *://chat.deepseek.com/*
 // @match        *://gemini.google.com/*
