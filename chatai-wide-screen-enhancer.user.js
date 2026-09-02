@@ -2,7 +2,7 @@
 // @name         AI 宽屏优化
 // @namespace    https://github.com/NBSOD/chatai-wide-screen-enhancer
 // @author       deepseek-v4-flash
-// @version      1.0.7
+// @version      1.0.8
 // @description  Gemini 和 DeepSeek 网页端宽屏 + 表格显示优化 + 自动折叠深度思考
 // @match        *://chat.deepseek.com/*
 // @match        *://gemini.google.com/*
@@ -65,6 +65,9 @@
         if (CONFIG.collapseThinking && PLATFORM === 'deepseek') {
             css.push(`
                 /* 预先隐藏思考内容，用户点击标题栏时释放 */
+                [data-ai-hide-think] {
+                    overflow-anchor: none !important;
+                }
                 [data-ai-hide-think] > div:last-child {
                     display: none !important;
                 }
@@ -187,6 +190,7 @@
                 // 必须 .ds-icon 是直接子元素，防止误杀弹窗（弹窗的 .ds-icon 在按钮里）
                 if (first.querySelector && first.querySelector(':scope > .ds-icon')) {
                     el.setAttribute('data-ai-hide-think', '1');
+                    el.style.overflowAnchor = 'none';
                 }
             }
         };
@@ -203,6 +207,9 @@
         // 对已标记的容器，点击 chevron 折叠 + 添加点击释放
         document.querySelectorAll('[data-ai-hide-think]').forEach(container => {
             if (container.dataset?.aiCollapsed === '1') return;
+
+            // 防止浏览器滚动锚定补偿布局偏移
+            container.style.overflowAnchor = 'none';
 
             const header = container.children[0];
             if (!header) return;
