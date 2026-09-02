@@ -3,9 +3,8 @@
 // @namespace    https://github.com/NBSOD/chatai-wide-screen-enhancer
 // @author       deepseek-v4-flash
 // @version      1.0.8
-// @description  Gemini 和 DeepSeek 网页端宽屏 + 表格显示优化 + 自动折叠深度思考
+// @description  DeepSeek 网页端宽屏 + 表格显示优化 + 自动折叠深度思考
 // @match        *://chat.deepseek.com/*
-// @match        *://gemini.google.com/*
 // @grant        GM_getValue
 // @grant        GM_setValue
 // @run-at       document-end
@@ -24,7 +23,6 @@
     const PLATFORM = (() => {
         const host = location.hostname;
         if (host.includes('deepseek')) return 'deepseek';
-        if (host.includes('gemini')) return 'gemini';
         return 'unknown';
     })();
 
@@ -48,12 +46,6 @@
                     max-width: 100% !important;
                 }
             `,
-        },
-        gemini: {
-            content: ['.response-container', '.conversation-container', '[class*="max-w-"]'],
-            container: ['main', '.conversation-container', '[class*="conversation"]'],
-            message: ['.message', '.response-content', '[class*="message"]'],
-            extraCSS: '',
         },
     };
 
