@@ -175,7 +175,7 @@
     }
 
     function hideThinkingEarly(root) {
-        // 特征：思考容器标题栏包含"已思考"文字 + .ds-icon
+        // 特征：思考容器标题栏包含"思考"文字 + .ds-icon
         const check = (el) => {
             if (el.children.length >= 2 && !el.hasAttribute('data-ai-hide-think')) {
                 // 跳过 ds-toggle-button（输入框的"深度思考/智能搜索"切换按钮）
@@ -184,9 +184,9 @@
                 const first = el.children[0];
                 // 必须 .ds-icon 是直接子元素，防止误杀弹窗（弹窗的 .ds-icon 在按钮里）
                 if (first.querySelector && first.querySelector(':scope > .ds-icon')) {
-                    // 检查标题栏是否包含"已思考"文字（排除输入框切换按钮）
+                    // 检查标题栏是否包含"思考"文字（已思考/思考中），排除输入框切换按钮
                     const text = first.textContent || '';
-                    if (text.includes('已思考')) {
+                    if (text.includes('思考')) {
                         el.setAttribute('data-ai-hide-think', '1');
                         el.style.overflowAnchor = 'none';
                     }
