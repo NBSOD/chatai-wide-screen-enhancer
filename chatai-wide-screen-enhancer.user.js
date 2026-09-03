@@ -175,14 +175,21 @@
     }
 
     function hideThinkingEarly(root) {
-        // 特征：一个 div 的第一个子 div 里直接包含 .ds-icon（不嵌套在按钮内部），且有至少 2 个子元素
+        // 特征：思考容器标题栏包含"已思考"文字 + .ds-icon
         const check = (el) => {
             if (el.children.length >= 2 && !el.hasAttribute('data-ai-hide-think')) {
+                // 跳过 ds-toggle-button（输入框的"深度思考/智能搜索"切换按钮）
+                if (el.classList.contains('ds-toggle-button')) return;
+
                 const first = el.children[0];
                 // 必须 .ds-icon 是直接子元素，防止误杀弹窗（弹窗的 .ds-icon 在按钮里）
                 if (first.querySelector && first.querySelector(':scope > .ds-icon')) {
-                    el.setAttribute('data-ai-hide-think', '1');
-                    el.style.overflowAnchor = 'none';
+                    // 检查标题栏是否包含"已思考"文字（排除输入框切换按钮）
+                    const text = first.textContent || '';
+                    if (text.includes('已思考')) {
+                        el.setAttribute('data-ai-hide-think', '1');
+                        el.style.overflowAnchor = 'none';
+                    }
                 }
             }
         };
@@ -196,9 +203,19 @@
     function collapseDeepThink() {
         if (!CONFIG.collapseThinking || PLATFORM !== 'deepseek') return;
 
+        // 清理之前误伤的 toggle 按钮（刷新已标错的 data-ai-hide-think）
+        document.querySelectorAll('.ds-toggle-button[data-ai-hide-think]').forEach(el => {
+            el.removeAttribute('data-ai-hide-think');
+            el.removeAttribute('data-ai-collapsed');
+            delete el.dataset.aiCollapsed;
+        });
+
         // 对已标记的容器，点击 chevron 折叠 + 添加点击释放
         document.querySelectorAll('[data-ai-hide-think]').forEach(container => {
             if (container.dataset?.aiCollapsed === '1') return;
+
+            // 跳过 ds-toggle-button（安全兜底）
+            if (container.classList.contains('ds-toggle-button')) return;
 
             // 防止浏览器滚动锚定补偿布局偏移
             container.style.overflowAnchor = 'none';
