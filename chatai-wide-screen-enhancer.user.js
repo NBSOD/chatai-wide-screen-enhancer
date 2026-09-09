@@ -2,7 +2,7 @@
 // @name         AI 宽屏优化
 // @namespace    https://github.com/NBSOD/chatai-wide-screen-enhancer
 // @author       deepseek-v4-flash
-// @version      1.0.15
+// @version      1.0.16
 // @description  DeepSeek 网页端宽屏 + 表格显示优化 + 自动折叠深度思考
 // @match        *://chat.deepseek.com/*
 // @grant        GM_getValue
@@ -17,8 +17,6 @@
     'use strict';
 
     const CONFIG = {
-        wideMode: GM_getValue('wideMode', true),
-        wideTable: GM_getValue('wideTable', true),
         collapseThinking: GM_getValue('collapseThinking', true),
     };
 
@@ -69,8 +67,7 @@
             `);
         }
 
-        if (CONFIG.wideTable) {
-            css.push(`
+        css.push(`
                 table {
                     width: 100% !important;
                     table-layout: auto !important;
@@ -102,7 +99,6 @@
                     }
                 }
             `);
-        }
 
         if (S.extraCSS) {
             css.push(S.extraCSS);
@@ -115,7 +111,6 @@
     }
 
     function wrapTables() {
-        if (!CONFIG.wideTable) return;
         document.querySelectorAll('table').forEach(t => {
             if (t.parentElement?.classList.contains('ai-table-wrapper')) return;
             const p = t.parentElement;
@@ -219,27 +214,18 @@
     }
 
     function registerMenuCommands() {
-        let menuIds = [];
+        let menuId = null;
 
         function updateMenu() {
-            menuIds.forEach(id => GM_unregisterMenuCommand(id));
-            menuIds = [];
+            if (menuId !== null) GM_unregisterMenuCommand(menuId);
 
-            const labels = {
-                wideMode: `📐 宽屏模式 ${CONFIG.wideMode ? '✅' : '❌'}`,
-                wideTable: `📊 表格加宽 ${CONFIG.wideTable ? '✅' : '❌'}`,
-                collapseThinking: `🧠 折叠深度思考 ${CONFIG.collapseThinking ? '✅' : '❌'}`,
-            };
-
-            const actions = {
-                wideMode: () => { CONFIG.wideMode = !CONFIG.wideMode; GM_setValue('wideMode', CONFIG.wideMode); refreshStyles(); updateMenu(); },
-                wideTable: () => { CONFIG.wideTable = !CONFIG.wideTable; GM_setValue('wideTable', CONFIG.wideTable); refreshStyles(); updateMenu(); },
-                collapseThinking: () => { CONFIG.collapseThinking = !CONFIG.collapseThinking; GM_setValue('collapseThinking', CONFIG.collapseThinking); refreshStyles(); updateMenu(); },
-            };
-
-            for (const [key, label] of Object.entries(labels)) {
-                menuIds.push(GM_registerMenuCommand(label, actions[key]));
-            }
+            const label = `🧠 折叠深度思考 ${CONFIG.collapseThinking ? '✅' : '❌'}`;
+            menuId = GM_registerMenuCommand(label, () => {
+                CONFIG.collapseThinking = !CONFIG.collapseThinking;
+                GM_setValue('collapseThinking', CONFIG.collapseThinking);
+                refreshStyles();
+                updateMenu();
+            });
         }
 
         updateMenu();
