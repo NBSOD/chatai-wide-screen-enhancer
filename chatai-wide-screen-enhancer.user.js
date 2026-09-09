@@ -2,11 +2,13 @@
 // @name         AI 宽屏优化
 // @namespace    https://github.com/NBSOD/chatai-wide-screen-enhancer
 // @author       deepseek-v4-flash
-// @version      1.0.12
+// @version      1.0.13
 // @description  DeepSeek 网页端宽屏 + 表格显示优化 + 自动折叠深度思考
 // @match        *://chat.deepseek.com/*
 // @grant        GM_getValue
 // @grant        GM_setValue
+// @grant        GM_registerMenuCommand
+// @grant        GM_unregisterMenuCommand
 // @run-at       document-end
 // @license      MIT
 // ==/UserScript==
@@ -105,6 +107,21 @@
                 }
                 [class*="max-w-"], [class*="max-w\\["] {
                     max-width: ${maxW} !important;
+                }
+                /* 输入框区域恢复原始宽度，不受宽屏影响 */
+                footer, [class*="ds-footer"], [class*="ds-input"],
+                [class*="chat-input"], [class*="input-area"],
+                [class*="prompt-container"], [class*="prompt-area"] {
+                    max-width: 100% !important;
+                    width: 100% !important;
+                }
+                footer [class*="max-w-"],
+                [class*="ds-footer"] [class*="max-w-"],
+                [class*="ds-input"] [class*="max-w-"],
+                [class*="chat-input"] [class*="max-w-"],
+                [class*="input-area"] [class*="max-w-"] {
+                    max-width: 56rem !important;
+                    width: 100% !important;
                 }
             `);
         }
@@ -258,118 +275,31 @@
         });
     }
 
-    function createPanel() {
-        if (document.getElementById('ai-enhancer-panel')) return;
+    function registerMenuCommands() {
+        let menuIds = [];
 
-        const panel = document.createElement('div');
-        panel.id = 'ai-enhancer-panel';
-        panel.className = 'collapsed';
-        panel.innerHTML = `
-            <div class="head">
-                <span class="icon">⚙️</span>
-                <span class="title">AI 增强</span>
-                <button class="toggle">+</button>
-            </div>
-            <div class="body">
-                <label><span>📐 宽屏</span><input type="checkbox" data-key="wideMode" ${CONFIG.wideMode ? 'checked' : ''}></label>
-                <label><span>📊 表格加宽</span><input type="checkbox" data-key="wideTable" ${CONFIG.wideTable ? 'checked' : ''}></label>
-                <label><span>🧠 折叠深度思考</span><input type="checkbox" data-key="collapseThinking" ${CONFIG.collapseThinking ? 'checked' : ''}></label>
-            </div>
-        `;
+        function updateMenu() {
+            menuIds.forEach(id => GM_unregisterMenuCommand(id));
+            menuIds = [];
 
-        const style = document.createElement('style');
-        style.textContent = `
-            #ai-enhancer-panel {
-                position: fixed; bottom: 20px; right: 20px; z-index: 999999;
-                background: #fff; border: 1px solid #ddd; border-radius: 10px;
-                box-shadow: 0 2px 12px rgba(0,0,0,0.12);
-                font: 13px -apple-system, 'PingFang SC', 'Microsoft YaHei', sans-serif;
-                min-width: 180px; overflow: hidden; user-select: none;
-                transition: all 0.2s;
-            }
-            #ai-enhancer-panel.collapsed {
-                width: 40px; height: 40px; border-radius: 50%; min-width: 0;
-                display: flex; align-items: center; justify-content: center;
-                cursor: pointer;
-            }
-            #ai-enhancer-panel.collapsed .body, #ai-enhancer-panel.collapsed .title, #ai-enhancer-panel.collapsed .toggle { display: none; }
-            #ai-enhancer-panel.collapsed .head { padding: 0; border: none; background: transparent; }
-            #ai-enhancer-panel.collapsed .icon { font-size: 20px; }
-            #ai-enhancer-panel:not(.collapsed) .icon { display: none; }
-            .head {
-                display: flex; justify-content: space-between; align-items: center;
-                padding: 8px 12px; border-bottom: 1px solid #eee; font-weight: 600;
-                cursor: move;
-            }
-            .title { flex: 1; margin-left: 4px; color: #333; }
-            .toggle {
-                background: none; border: none; font-size: 16px; cursor: pointer;
-                padding: 0 4px; color: #333; line-height: 1;
-            }
-            .body { padding: 6px 0; }
-            .body label {
-                display: flex; justify-content: space-between; align-items: center;
-                padding: 6px 12px; cursor: pointer; margin: 0;
-            }
-            .body label:hover { background: rgba(0,0,0,0.04); }
-            .body label span { font-size: 13px; color: #333; }
-            .body label input[type="checkbox"] {
-                width: 16px; height: 16px; cursor: pointer; accent-color: #4f46e5;
-            }
-            @media (prefers-color-scheme: dark) {
-                #ai-enhancer-panel { background: #2a2a2a; border-color: #444; }
-                .head { border-color: #444; }
-                .title, .toggle, .body label span { color: #e0e0e0; }
-                .body label:hover { background: rgba(255,255,255,0.06); }
-            }
-            @media (max-width: 768px) { #ai-enhancer-panel { bottom: 80px; right: 10px; } }
-        `;
-        document.head.appendChild(style);
+            const labels = {
+                wideMode: `📐 宽屏模式 ${CONFIG.wideMode ? '✅' : '❌'}`,
+                wideTable: `📊 表格加宽 ${CONFIG.wideTable ? '✅' : '❌'}`,
+                collapseThinking: `🧠 折叠深度思考 ${CONFIG.collapseThinking ? '✅' : '❌'}`,
+            };
 
-        // 展开/折叠
-        panel.addEventListener('click', function (e) {
-            if (this.classList.contains('collapsed')) {
-                this.classList.remove('collapsed');
-                this.querySelector('.toggle').textContent = '−';
+            const actions = {
+                wideMode: () => { CONFIG.wideMode = !CONFIG.wideMode; GM_setValue('wideMode', CONFIG.wideMode); refreshStyles(); updateMenu(); },
+                wideTable: () => { CONFIG.wideTable = !CONFIG.wideTable; GM_setValue('wideTable', CONFIG.wideTable); refreshStyles(); updateMenu(); },
+                collapseThinking: () => { CONFIG.collapseThinking = !CONFIG.collapseThinking; GM_setValue('collapseThinking', CONFIG.collapseThinking); refreshStyles(); updateMenu(); },
+            };
+
+            for (const [key, label] of Object.entries(labels)) {
+                menuIds.push(GM_registerMenuCommand(label, actions[key]));
             }
-        });
-        panel.querySelector('.toggle').addEventListener('click', (e) => {
-            e.stopPropagation();
-            panel.classList.add('collapsed');
-            panel.querySelector('.toggle').textContent = '+';
-        });
+        }
 
-        // 开关
-        panel.querySelectorAll('input[type="checkbox"]').forEach(cb => {
-            cb.addEventListener('change', function (e) {
-                e.stopPropagation();
-                CONFIG[this.dataset.key] = this.checked;
-                try { GM_setValue(this.dataset.key, this.checked); } catch (e) {}
-                refreshStyles();
-            });
-        });
-
-        // 拖拽
-        let dragging = false, sx, sy, ox, oy;
-        const header = panel.querySelector('.head');
-        header.addEventListener('mousedown', (e) => {
-            if (e.target.closest('.toggle')) return;
-            if (panel.classList.contains('collapsed')) return;
-            dragging = true;
-            sx = e.clientX; sy = e.clientY;
-            const r = panel.getBoundingClientRect();
-            ox = r.left; oy = r.top;
-            panel.style.right = 'auto'; panel.style.bottom = 'auto';
-            panel.style.left = ox + 'px'; panel.style.top = oy + 'px';
-        });
-        document.addEventListener('mousemove', (e) => {
-            if (!dragging) return;
-            panel.style.left = (ox + e.clientX - sx) + 'px';
-            panel.style.top = (oy + e.clientY - sy) + 'px';
-        });
-        document.addEventListener('mouseup', () => { dragging = false; });
-
-        document.body.appendChild(panel);
+        updateMenu();
     }
 
     function refreshStyles() {
@@ -390,7 +320,7 @@
             setTimeout(collapseDeepThink, 800);
         }
         observeDOM();
-        createPanel();
+        registerMenuCommands();
     }
 
     if (document.readyState === 'loading') {
