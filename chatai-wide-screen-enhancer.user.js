@@ -2,7 +2,7 @@
 // @name         AI 宽屏优化
 // @namespace    https://github.com/NBSOD/chatai-wide-screen-enhancer
 // @author       deepseek-v4-flash
-// @version      1.0.11
+// @version      1.0.12
 // @description  DeepSeek 网页端宽屏 + 表格显示优化 + 自动折叠深度思考
 // @match        *://chat.deepseek.com/*
 // @grant        GM_getValue
@@ -84,7 +84,7 @@
             css.push(`
                 ${S.content.join(',\n')} {
                     max-width: ${maxW} !important;
-                    width: 98% !important;
+                    width: min(98%, 1600px) !important;
                     margin-left: auto !important;
                     margin-right: auto !important;
                     padding-left: 24px !important;
@@ -101,7 +101,7 @@
                 }
                 ${S.message.join(',\n')} {
                     max-width: ${maxW} !important;
-                    width: 98% !important;
+                    width: min(98%, 1600px) !important;
                 }
                 [class*="max-w-"], [class*="max-w\\["] {
                     max-width: ${maxW} !important;
