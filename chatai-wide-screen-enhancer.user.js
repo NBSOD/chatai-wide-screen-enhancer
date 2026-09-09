@@ -2,7 +2,7 @@
 // @name         AI 宽屏优化
 // @namespace    https://github.com/NBSOD/chatai-wide-screen-enhancer
 // @author       deepseek-v4-flash
-// @version      1.0.13
+// @version      1.0.14
 // @description  DeepSeek 网页端宽屏 + 表格显示优化 + 自动折叠深度思考
 // @match        *://chat.deepseek.com/*
 // @grant        GM_getValue
@@ -31,10 +31,14 @@
     // 平台选择器
     const SELECTORS = {
         deepseek: {
-            content: ['.max-w-4xl', '.max-w-3xl', '[class*="max-w-"]', '.ds-markdown', '.md-content'],
-            container: ['.d850f6a0', 'main', '.flex-1', '[class*="overflow-auto"]', '.ds-virtual-list-items'],
-            message: ['[class*="message"]', '[class*="conversation"]', '[class*="ds-chat"]'],
+            // 仅对会话消息区域内的元素生效，不波及输入框、侧边栏、header
+            content: ['.max-w-4xl', '.max-w-3xl', '.ds-markdown', '.md-content', '[class*="md-content"]'],
+            container: ['.ds-virtual-list-items'],
             extraCSS: `
+                .ds-virtual-list-items {
+                    padding-left: 24px !important;
+                    padding-right: 24px !important;
+                }
                 .ds-markdown, .md-content, [class*="markdown"] {
                     max-width: 100% !important;
                     width: 100% !important;
@@ -46,19 +50,6 @@
                 div:has(> table) {
                     overflow-x: auto !important;
                     max-width: 100% !important;
-                }
-                /* 撑满内容区域，消除两侧空白 */
-                .ds-virtual-list-items {
-                    padding-left: 24px !important;
-                    padding-right: 24px !important;
-                }
-                .ds-message, [class*="ds-message"] {
-                    max-width: 100% !important;
-                    width: 100% !important;
-                }
-                .ds-assistant-message-main-content {
-                    max-width: 100% !important;
-                    width: 100% !important;
                 }
             `,
         },
@@ -84,44 +75,27 @@
         if (CONFIG.wideMode) {
             const maxW = 'none';
             css.push(`
-                ${S.content.join(',\n')} {
+                /* ---- 仅对话区域宽屏，不影响输入框/侧边栏 ---- */
+                :root {
+                    --message-list-max-width: 100% !important;
+                }
+                .ds-virtual-list-items {
+                    padding-left: 24px !important;
+                    padding-right: 24px !important;
+                    max-width: 100% !important;
+                    width: 100% !important;
+                }
+                /* 对话消息容器占满可用宽度 */
+                .ds-virtual-list-items > div {
+                    max-width: 100% !important;
+                    width: 100% !important;
+                }
+                /* 消息内容自适应 */
+                .ds-virtual-list-items ${S.content.join(',\n')} {
                     max-width: ${maxW} !important;
                     width: min(98%, 1600px) !important;
                     margin-left: auto !important;
                     margin-right: auto !important;
-                    padding-left: 24px !important;
-                    padding-right: 24px !important;
-                }
-                ${S.container.join(',\n')} {
-                    max-width: 100% !important;
-                    width: 100% !important;
-                    padding-left: 24px !important;
-                    padding-right: 24px !important;
-                }
-                :root {
-                    --message-list-max-width: 100% !important;
-                }
-                ${S.message.join(',\n')} {
-                    max-width: ${maxW} !important;
-                    width: min(98%, 1600px) !important;
-                }
-                [class*="max-w-"], [class*="max-w\\["] {
-                    max-width: ${maxW} !important;
-                }
-                /* 输入框区域恢复原始宽度，不受宽屏影响 */
-                footer, [class*="ds-footer"], [class*="ds-input"],
-                [class*="chat-input"], [class*="input-area"],
-                [class*="prompt-container"], [class*="prompt-area"] {
-                    max-width: 100% !important;
-                    width: 100% !important;
-                }
-                footer [class*="max-w-"],
-                [class*="ds-footer"] [class*="max-w-"],
-                [class*="ds-input"] [class*="max-w-"],
-                [class*="chat-input"] [class*="max-w-"],
-                [class*="input-area"] [class*="max-w-"] {
-                    max-width: 56rem !important;
-                    width: 100% !important;
                 }
             `);
         }
