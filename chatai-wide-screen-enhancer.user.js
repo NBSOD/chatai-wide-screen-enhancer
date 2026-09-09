@@ -2,7 +2,7 @@
 // @name         AI 宽屏优化
 // @namespace    https://github.com/NBSOD/chatai-wide-screen-enhancer
 // @author       deepseek-v4-flash
-// @version      1.0.14
+// @version      1.0.15
 // @description  DeepSeek 网页端宽屏 + 表格显示优化 + 自动折叠深度思考
 // @match        *://chat.deepseek.com/*
 // @grant        GM_getValue
@@ -31,9 +31,6 @@
     // 平台选择器
     const SELECTORS = {
         deepseek: {
-            // 仅对会话消息区域内的元素生效，不波及输入框、侧边栏、header
-            content: ['.max-w-4xl', '.max-w-3xl', '.ds-markdown', '.md-content', '[class*="md-content"]'],
-            container: ['.ds-virtual-list-items'],
             extraCSS: `
                 .ds-virtual-list-items {
                     padding-left: 24px !important;
@@ -68,34 +65,6 @@
                 }
                 [data-ai-hide-think] > div:last-child {
                     display: none !important;
-                }
-            `);
-        }
-
-        if (CONFIG.wideMode) {
-            const maxW = 'none';
-            css.push(`
-                /* ---- 仅对话区域宽屏，不影响输入框/侧边栏 ---- */
-                :root {
-                    --message-list-max-width: 100% !important;
-                }
-                .ds-virtual-list-items {
-                    padding-left: 24px !important;
-                    padding-right: 24px !important;
-                    max-width: 100% !important;
-                    width: 100% !important;
-                }
-                /* 对话消息容器占满可用宽度 */
-                .ds-virtual-list-items > div {
-                    max-width: 100% !important;
-                    width: 100% !important;
-                }
-                /* 消息内容自适应 */
-                .ds-virtual-list-items ${S.content.join(',\n')} {
-                    max-width: ${maxW} !important;
-                    width: min(98%, 1600px) !important;
-                    margin-left: auto !important;
-                    margin-right: auto !important;
                 }
             `);
         }
