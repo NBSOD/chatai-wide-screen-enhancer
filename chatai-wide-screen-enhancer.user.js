@@ -2,7 +2,7 @@
 // @name         AI 宽屏优化
 // @namespace    https://github.com/NBSOD/chatai-wide-screen-enhancer
 // @author       deepseek-v4-flash
-// @version      1.0.10
+// @version      1.0.11
 // @description  DeepSeek 网页端宽屏 + 表格显示优化 + 自动折叠深度思考
 // @match        *://chat.deepseek.com/*
 // @grant        GM_getValue
@@ -30,7 +30,7 @@
     const SELECTORS = {
         deepseek: {
             content: ['.max-w-4xl', '.max-w-3xl', '[class*="max-w-"]', '.ds-markdown', '.md-content'],
-            container: ['.d850f6a0', 'main', '.flex-1', '[class*="overflow-auto"]'],
+            container: ['.d850f6a0', 'main', '.flex-1', '[class*="overflow-auto"]', '.ds-virtual-list-items'],
             message: ['[class*="message"]', '[class*="conversation"]', '[class*="ds-chat"]'],
             extraCSS: `
                 .ds-markdown, .md-content, [class*="markdown"] {
@@ -44,6 +44,19 @@
                 div:has(> table) {
                     overflow-x: auto !important;
                     max-width: 100% !important;
+                }
+                /* 撑满内容区域，消除两侧空白 */
+                .ds-virtual-list-items {
+                    padding-left: 24px !important;
+                    padding-right: 24px !important;
+                }
+                .ds-message, [class*="ds-message"] {
+                    max-width: 100% !important;
+                    width: 100% !important;
+                }
+                .ds-assistant-message-main-content {
+                    max-width: 100% !important;
+                    width: 100% !important;
                 }
             `,
         },
@@ -80,6 +93,11 @@
                 ${S.container.join(',\n')} {
                     max-width: 100% !important;
                     width: 100% !important;
+                    padding-left: 24px !important;
+                    padding-right: 24px !important;
+                }
+                :root {
+                    --message-list-max-width: 100% !important;
                 }
                 ${S.message.join(',\n')} {
                     max-width: ${maxW} !important;
