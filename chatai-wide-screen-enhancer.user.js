@@ -2,7 +2,7 @@
 // @name         AI 宽屏优化
 // @namespace    https://github.com/NBSOD/chatai-wide-screen-enhancer
 // @author       NBSOD
-// @version      1.1.0
+// @version      1.1.1
 // @description  DeepSeek 网页端宽屏 + 表格显示优化 + 自动折叠深度思考
 // @match        *://chat.deepseek.com/*
 // @grant        GM_getValue
@@ -22,7 +22,8 @@
     'use strict';
 
     const CONFIG = {
-        collapseThinking: readSetting('collapseThinking', true),
+        // 归一化：个别管理器可能把布尔值存成字符串 'false'（truthy），这里显式比对
+        collapseThinking: readSetting('collapseThinking', true) !== false,
     };
 
     function readSetting(key, fallback) {
@@ -64,48 +65,47 @@
             max-width: 100% !important;
             width: 100% !important;
         }
-        .ds-markdown table, .md-content table,
-        .ds-virtual-list-items [class*="markdown"] table {
-            width: 100% !important;
+        /* 表格不锁死 100%：窄表格铺满，宽表格按内容撑开（配合下方滚动容器）
+           原先的 width:100% 会把宽表格压扁换行，和横向滚动的目标互相打架 */
+        .ds-virtual-list-items table {
+            min-width: 100% !important;
+            width: max-content !important;
+            max-width: none !important;
             table-layout: auto !important;
         }
-        /* 宽表格横向滚动（纯 CSS，无需改写 React 的 DOM） */
-        div:has(> table) {
+        /* 宽表格横向滚动（纯 CSS，无需改写 React 的 DOM）
+           收窄到对话区，避免影响 DeepSeek 自身 UI 里的表格 */
+        .ds-virtual-list-items div:has(> table) {
             overflow-x: auto !important;
             max-width: 100% !important;
         }
     `;
 
     const TABLE_CSS = `
-        table {
-            width: 100% !important;
-            table-layout: auto !important;
+        /* 收窄到对话区：原先的全局 table 选择器会影响 DeepSeek 自身 UI 的表格 */
+        .ds-virtual-list-items table,
+        .ds-markdown table, .md-content table {
             border-collapse: collapse !important;
             margin: 1em 0 !important;
         }
-        table th, table td {
+        /* 中性灰 + 透明度：在浅色和深色主题下都能正常显示，
+           不再依赖 prefers-color-scheme（站内主题和系统主题并不一致） */
+        .ds-virtual-list-items th, .ds-virtual-list-items td,
+        .ds-markdown th, .ds-markdown td,
+        .md-content th, .md-content td {
             padding: 8px 12px !important;
-            border: 1px solid #ccc !important;
+            border: 1px solid rgba(128,128,128,0.35) !important;
             text-align: left !important;
             vertical-align: top !important;
         }
-        table th {
-            background: rgba(0,0,0,0.04) !important;
+        .ds-virtual-list-items th,
+        .ds-markdown th, .md-content th {
+            background: rgba(128,128,128,0.12) !important;
             font-weight: 600 !important;
         }
-        table tr:nth-child(even) {
-            background: rgba(0,0,0,0.02) !important;
-        }
-        @media (prefers-color-scheme: dark) {
-            table th, table td {
-                border-color: #444 !important;
-            }
-            table th {
-                background: rgba(255,255,255,0.06) !important;
-            }
-            table tr:nth-child(even) {
-                background: rgba(255,255,255,0.02) !important;
-            }
+        .ds-virtual-list-items tr:nth-child(even),
+        .ds-markdown tr:nth-child(even), .md-content tr:nth-child(even) {
+            background: rgba(128,128,128,0.06) !important;
         }
     `;
 
@@ -136,6 +136,8 @@
     const _releaseHandlers = new WeakMap(); // container -> 标题栏 click 处理器
     let _collapseTimer = null;
     let _selfClick = false;                 // 标记脚本自己触发的 click
+    const _lastClick = new WeakMap();       // container -> 上次由脚本点击的时间戳
+    const CLICK_COOLDOWN = 800;             // 冷却，杜绝「点击 → 重渲染 → 再点击」反馈环
 
     /** 定位标题栏末尾的 chevron 折叠按钮 */
     function findToggleButton(header) {
@@ -166,6 +168,36 @@
         return null;
     }
 
+    /**
+     * 无 aria-expanded 时的兜底：用布局判断内容区是否已经收起。
+     * 返回 'collapsed' / 'expanded' / 'unknown'。
+     * 之所以不能只信自维护的 data-ai-collapsed 标记：虚拟列表会复用 DOM 节点，
+     * 标记会跟着被回收的节点跑到另一条消息上，导致新消息永远不会被折叠。
+     */
+    function probeCollapsed(container) {
+        const body = container.children[1];
+        if (!body) return 'unknown';
+
+        let cs;
+        try {
+            cs = getComputedStyle(body);
+        } catch (e) {
+            return 'unknown';
+        }
+        if (cs.display === 'none' || cs.visibility === 'hidden') return 'collapsed';
+        if (cs.maxHeight !== 'none' && parseFloat(cs.maxHeight) === 0) return 'collapsed';
+        if (cs.height !== 'auto' && parseFloat(cs.height) === 0 && cs.overflow !== 'visible') {
+            return 'collapsed';
+        }
+
+        try {
+            const h = body.getBoundingClientRect().height;
+            if (h > 1) return 'expanded';
+            if (h === 0) return 'collapsed';
+        } catch (e) { /* 忽略，落到 unknown */ }
+        return 'unknown';
+    }
+
     /** 用户点了标题栏（无论文字还是箭头）就交还控制权，避免和用户互相拉扯 */
     function bindRelease(container, header) {
         if (_releaseHandlers.has(container)) return;
@@ -176,6 +208,8 @@
             container.removeAttribute('data-ai-collapsed');
             delete container.dataset.aiCollapsed;
             container.style.overflowAnchor = '';
+            // 用户手动接管，连冷却状态一起复位
+            _lastClick.delete(container);
             header.removeEventListener('click', handler);
             _releaseHandlers.delete(container);
         };
@@ -195,6 +229,7 @@
         } finally {
             _selfClick = false;
         }
+        _lastClick.set(container, Date.now());
         container.dataset.aiCollapsed = '1';
         bindRelease(container, header);
         return true;
@@ -202,36 +237,45 @@
 
     /**
      * 尽早给思考容器打标记。
-     * 特征：首个子元素的直接子级含 .ds-icon，且文本含「思考」（已思考 / 思考中）。
-     * 返回是否标记了新容器。
+     * 特征：首个子元素的直接子级含 .ds-icon，且标题是含「思考」的短标签
+     * （已思考 / 思考中 / 已思考（用时 12 秒））。
+     * 返回是否「发现」思考容器——包括已经标记过的：节点被虚拟列表回收后重新插入时，
+     * 只有让调用方认为命中，collapseDeepThink 才会被调度，否则复用节点会漏折叠。
      */
     function hideThinkingEarly(root) {
         if (!root || typeof root.querySelector !== 'function') return false;
         // 快速排除：整棵子树里连一个图标都没有，不可能是思考容器
         if (!root.querySelector('.ds-icon')) return false;
 
-        let marked = false;
+        let found = false;
 
         const check = (el) => {
             if (el.children.length < 2) return;
-            if (el.hasAttribute('data-ai-hide-think')) return;
             // 输入框的「深度思考 / 智能搜索」切换按钮，不能碰
             if (el.classList.contains('ds-toggle-button')) return;
+            // 输入区域（含输入控件 / 可编辑元素）不碰
+            if (el.querySelector('textarea, input, [contenteditable="true"]')) return;
 
             const first = el.children[0];
             // .ds-icon 必须是直接子级，避免误伤弹窗（弹窗的图标在按钮里）
             if (!first.querySelector || !first.querySelector(':scope > .ds-icon')) return;
 
-            if (!(first.textContent || '').includes('思考')) return;
+            // 标题应当是短标签，而不是含「思考」字样的长段落
+            // （原实现只做 includes('思考')，任何带图标又提到「思考」的容器都会中招）
+            const label = (first.textContent || '').trim();
+            if (!label.includes('思考') || label.length > 30) return;
+
+            found = true;
+            // 已经标记过：可能只是节点被复用，仍需让调用方重新判定一次状态
+            if (el.hasAttribute('data-ai-hide-think')) return;
 
             el.setAttribute('data-ai-hide-think', '1');
             el.style.overflowAnchor = 'none';
-            marked = true;
         };
 
         if (root.tagName === 'DIV') check(root);
         root.querySelectorAll('div').forEach(check);
-        return marked;
+        return found;
     }
 
     function collapseDeepThink() {
@@ -244,11 +288,16 @@
             delete el.dataset.aiCollapsed;
         });
 
+        const now = Date.now();
+
         document.querySelectorAll('[data-ai-hide-think]').forEach(container => {
             if (container.classList.contains('ds-toggle-button')) return;
 
             const header = container.children[0];
             if (!header) return;
+
+            // 冷却：脚本刚点过就不再点，避免「点击 → 重渲染 → 再点击」的反馈环
+            if (now - (_lastClick.get(container) || 0) < CLICK_COOLDOWN) return;
 
             const expanded = readExpanded(container);
 
@@ -262,7 +311,20 @@
                 container.dataset.aiCollapsed = '1';
                 return;
             }
-            // 无权威状态时退回自维护标记
+
+            // 无 aria-expanded：优先看布局。这样被虚拟列表回收、标记已经错位的节点
+            // 也能按真实状态重新折叠，而不是被过期的 data-ai-collapsed 骗过去
+            const probed = probeCollapsed(container);
+            if (probed === 'collapsed') {
+                container.dataset.aiCollapsed = '1';
+                return;
+            }
+            if (probed === 'expanded') {
+                clickToggle(container, header);
+                return;
+            }
+
+            // 布局也判断不出来时，才退回自维护标记
             if (container.dataset.aiCollapsed === '1') return;
             clickToggle(container, header);
         });
@@ -276,6 +338,9 @@
         container.removeAttribute('data-ai-collapsed');
         delete container.dataset.aiCollapsed;
         container.style.overflowAnchor = '';
+        // 一并清掉冷却：teardown 刚点过（展开），紧接着就要能重新折叠，
+        // 否则「重置折叠状态」「关→开开关」会被 800ms 冷却挡住，区块停在展开态
+        _lastClick.delete(container);
 
         if (!header) return;
         const handler = _releaseHandlers.get(container);
@@ -316,18 +381,19 @@
             if (!CONFIG.collapseThinking || !IS_DS) return;
 
             const seen = new WeakSet(); // 单批次内去重，避免重复扫描同一子树
-            let marked = false;
+            let found = false;
 
             for (const mutation of mutations) {
                 for (const node of mutation.addedNodes) {
                     if (node.nodeType !== 1 || seen.has(node)) continue;
                     seen.add(node);
-                    if (hideThinkingEarly(node)) marked = true;
+                    // 包含已标记的复用节点：虚拟列表把节点搬到新消息上时也要重新判定
+                    if (hideThinkingEarly(node)) found = true;
                 }
             }
 
-            // 没有任何新思考容器就不必跑后续流程
-            if (!marked) return;
+            // 没有发现思考容器就不必跑后续流程
+            if (!found) return;
             clearTimeout(_collapseTimer);
             _collapseTimer = setTimeout(collapseDeepThink, 200);
         });
@@ -341,8 +407,17 @@
 
     function registerMenuCommands() {
         let ids = [];
+        let registrationStale = false;
 
         function updateMenu() {
+            // 若管理器不支持注销菜单项（GM_registerMenuCommand 拿不到 id），就只注册一次：
+            // 否则每切换一次开关都会多出一个菜单项
+            if (registrationStale) return;
+            if (ids.some(id => id === null || id === undefined)) {
+                registrationStale = true;
+                return;
+            }
+
             ids.forEach(unregisterMenu);
             ids = [];
 
@@ -384,7 +459,6 @@
     }
 
     function init() {
-        console.log('[AI 宽屏优化] 平台:', IS_DS ? 'deepseek' : 'unknown');
         injectStyles();
 
         if (CONFIG.collapseThinking && IS_DS) {
@@ -394,6 +468,14 @@
 
         observeDOM();
         registerMenuCommands();
+
+        // 选择器自检：类名是 DeepSeek 的内部实现，改名后脚本会「静默失效」
+        // （页面看起来正常，只是不再生效），这里给一句明确的提示
+        setTimeout(() => {
+            if (!document.querySelector('.ds-virtual-list-items')) {
+                console.warn('[AI 宽屏优化] 未找到 .ds-virtual-list-items，宽屏/表格样式可能已失效（DeepSeek 可能改了类名）');
+            }
+        }, 3000);
     }
 
     if (document.readyState === 'loading') {
