@@ -10,15 +10,28 @@ DeepSeek 网页端宽屏 + 表格显示优化 + 自动折叠深度思考
 
 ## 安装
 
-需要浏览器安装 [Tampermonkey](https://www.tampermonkey.net/) 或 [Violentmonkey](https://violentmonkey.github.io/)，然后打开下方的脚本链接安装：
+需要浏览器安装 [Tampermonkey](https://www.tampermonkey.net/) / [ScriptCat](https://scriptcat.org/) 或 [Violentmonkey](https://violentmonkey.github.io/)，然后打开下方的脚本链接安装：
 
 [👉 安装脚本](https://github.com/NBSOD/chatai-wide-screen-enhancer/raw/main/chatai-wide-screen-enhancer.user.js)
+
+## 设置
+
+宽屏与表格优化始终生效，无需配置。点击浏览器工具栏的脚本管理器图标，在 **AI 宽屏优化** 下可操作：
+
+| 菜单项 | 说明 |
+|--------|------|
+| 🧠 折叠深度思考 | 开关自动折叠（默认开） |
+| 🔄 重置折叠状态 | 偶发状态异常时，重新折叠当前会话的所有思考区块 |
+
+> 手动点击某个思考区块的标题栏或箭头后，脚本会交还该区块的控制权，不再自动折叠它。
 
 ## 变更
 
 | 版本 | 内容 |
 |------|------|
+| 1.1.0 | 性能与健壮性重构：移除 `wrapTables` 的 DOM 包装（改用纯 CSS，消除流式输出卡顿与 React `removeChild` 风险）；新增 `aria-expanded` 权威状态判断以抵抗虚拟列表节点复用；修复关闭开关后思考区块不恢复的问题；新增「重置折叠状态」菜单项；收窄过宽选择器；补全 `@updateURL` 等元信息 |
 | 1.0.16 | 移除宽屏模式和表格加宽的设置开关（功能始终生效），仅保留折叠深度思考开关 |
+| 1.0.15 | 移除冲突的 wideMode CSS，extraCSS 始终生效即可达到最佳宽屏效果，输入框不受影响 |
 | 1.0.14 | 修复宽屏导致右侧内容被截断：将宽屏 CSS 限定在 `.ds-virtual-list-items` 对话区域内，不再影响输入框/侧边栏 |
 | 1.0.13 | 输入框保持原始窄度；设置移至脚本管理器菜单（GM_registerMenuCommand），移除网页齿轮图标 |
 | 1.0.12 | 自适应宽屏：使用 `min(98%, 1600px)` 根据分辨率动态缩放，超宽屏自动封顶 |
