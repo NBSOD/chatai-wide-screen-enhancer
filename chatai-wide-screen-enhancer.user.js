@@ -2,7 +2,7 @@
 // @name         AI 宽屏优化
 // @namespace    https://github.com/NBSOD/chatai-wide-screen-enhancer
 // @author       NBSOD
-// @version      1.1.1
+// @version      1.1.2
 // @description  DeepSeek 网页端宽屏 + 表格显示优化 + 自动折叠深度思考
 // @match        *://chat.deepseek.com/*
 // @grant        GM_getValue
@@ -139,6 +139,12 @@
     const _lastClick = new WeakMap();       // container -> 上次由脚本点击的时间戳
     const CLICK_COOLDOWN = 800;             // 冷却，杜绝「点击 → 重渲染 → 再点击」反馈环
 
+    // 折叠时的滚动保持（见 toggleKeepingScroll）
+    const BOTTOM_SLACK = 100;               // px，判定「是否停在最新内容处」的容差
+    const ANCHOR_RESTORE_MS = 600;          // 折叠后多久恢复滚动锚定
+    let _scroller = null;                   // 缓存的消息滚动容器
+    let _anchorGuardTimer = null;
+
     /** 定位标题栏末尾的 chevron 折叠按钮 */
     function findToggleButton(header) {
         if (!header) return null;
@@ -235,6 +241,107 @@
         return true;
     }
 
+    /* ------------------------------------------------------------------ *
+     * 折叠时的滚动保持
+     *
+     * DeepSeek 用虚拟列表承载消息。折叠「深度思考」会让该区块瞬间变矮，
+     * 而浏览器默认的滚动锚定会把这段高度差当成「锚点上方的内容变了」，
+     * 主动把 scrollTop 往回拉 —— 表现就是发送后页面自己往上缩一节，
+     * 得手动往下拉才能看到刚发的内容和回复。
+     *
+     * 只在被折叠的元素上写 overflow-anchor:none 是不够的：浏览器挑中的锚点
+     * 往往是它下方正在流式输出的正文，那个元素照样会被位移、照样触发补偿。
+     * 所以这里直接关掉滚动容器的锚定，并按「折叠前是否停在最新内容处」修回：
+     *   - 停在底部 → 钉回底部（把人留在最新内容处）
+     *   - 在读历史 → 保持折叠区底边在视口中的位置不变（下方正文不跳）
+     * 修正是幂等的（用内容坐标反解目标 scrollTop），折叠动画或后续重渲染
+     * 期间重复调用也不会把页面越推越远。
+     * ------------------------------------------------------------------ */
+
+    function isScrollable(el) {
+        if (!el || el.nodeType !== 1) return false;
+        let v;
+        try {
+            v = getComputedStyle(el).overflowY;
+        } catch (e) {
+            return false;
+        }
+        return v === 'auto' || v === 'scroll' || v === 'overlay';
+    }
+
+    /** 定位承载消息列表的滚动容器（缓存；节点脱离文档时自动重新解析） */
+    function getScroller(from) {
+        if (_scroller && _scroller.isConnected) return _scroller;
+
+        const start = (from && from.nodeType === 1)
+            ? from
+            : document.querySelector('.ds-virtual-list-items');
+        let firstScrollable = null;
+
+        // 优先取真正溢出、能滚动的祖先，避免选中一个 overflow:auto 却滚不动的中间层
+        for (let p = start && start.parentElement; p; p = p.parentElement) {
+            if (!isScrollable(p)) continue;
+            if (!firstScrollable) firstScrollable = p;
+            if (p.scrollHeight > p.clientHeight + 1) {
+                _scroller = p;
+                return p;
+            }
+        }
+
+        _scroller = firstScrollable || document.scrollingElement || document.documentElement;
+        return _scroller;
+    }
+
+    function isNearBottom(scroller) {
+        if (!scroller) return false;
+        return scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight <= BOTTOM_SLACK;
+    }
+
+    /** 折叠 / 展开一次，并把滚动位置修回来；返回是否真的点到了折叠按钮 */
+    function toggleKeepingScroll(container, header) {
+        const scroller = getScroller(container);
+        const stick = isNearBottom(scroller);
+        const targetBottom = container.getBoundingClientRect().bottom;
+
+        if (scroller) {
+            // 先关锚定：否则我们修好之后，浏览器会再按自己的判断拉走一次
+            scroller.style.overflowAnchor = 'none';
+            clearTimeout(_anchorGuardTimer);
+        }
+
+        if (!clickToggle(container, header)) {
+            if (scroller) scroller.style.overflowAnchor = '';
+            return false;
+        }
+
+        const settle = () => {
+            if (!scroller || !scroller.isConnected || !container.isConnected) return;
+
+            if (stick) {
+                // 停在最新内容处：钉回底部。折叠后内容继续变矮时，
+                // 浏览器会自动按新的滚动上限夹紧，不会悬在半空
+                scroller.scrollTop = scroller.scrollHeight;
+                return;
+            }
+
+            // 容器底边在内容坐标里的位置不随折叠改变，用它反解目标 scrollTop
+            const contentBottom = scroller.scrollTop + container.getBoundingClientRect().bottom;
+            const want = contentBottom - targetBottom;
+            if (want !== scroller.scrollTop) scroller.scrollTop = want;
+        };
+
+        settle();
+        requestAnimationFrame(settle);
+        requestAnimationFrame(() => requestAnimationFrame(settle));
+
+        if (scroller) {
+            _anchorGuardTimer = setTimeout(() => {
+                if (scroller.isConnected) scroller.style.overflowAnchor = '';
+            }, ANCHOR_RESTORE_MS);
+        }
+        return true;
+    }
+
     /**
      * 尽早给思考容器打标记。
      * 特征：首个子元素的直接子级含 .ds-icon，且标题是含「思考」的短标签
@@ -303,7 +410,7 @@
 
             // 权威状态：明确展开就折叠（节点被复用也能正确处理）
             if (expanded === true) {
-                clickToggle(container, header);
+                toggleKeepingScroll(container, header);
                 return;
             }
             // 权威状态：明确已折叠，只补标记，不重复点击
@@ -320,13 +427,13 @@
                 return;
             }
             if (probed === 'expanded') {
-                clickToggle(container, header);
+                toggleKeepingScroll(container, header);
                 return;
             }
 
             // 布局也判断不出来时，才退回自维护标记
             if (container.dataset.aiCollapsed === '1') return;
-            clickToggle(container, header);
+            toggleKeepingScroll(container, header);
         });
     }
 
@@ -369,7 +476,7 @@
 
             // 把之前由我们折叠的重新展开（先读状态，再清标记）
             if (wasCollapsed && header && readExpanded(container) !== true) {
-                clickToggle(container, header);
+                toggleKeepingScroll(container, header);
             }
 
             clearFlags(container);
