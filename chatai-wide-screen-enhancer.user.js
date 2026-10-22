@@ -2,7 +2,7 @@
 // @name         AI 宽屏优化
 // @namespace    https://github.com/NBSOD/chatai-wide-screen-enhancer
 // @author       NBSOD
-// @version      1.1.2
+// @version      1.1.3
 // @description  DeepSeek 网页端宽屏 + 表格显示优化 + 自动折叠深度思考
 // @match        *://chat.deepseek.com/*
 // @grant        GM_getValue
@@ -66,18 +66,51 @@
             width: 100% !important;
         }
         /* 表格不锁死 100%：窄表格铺满，宽表格按内容撑开（配合下方滚动容器）
-           原先的 width:100% 会把宽表格压扁换行，和横向滚动的目标互相打架 */
+           原先的 width:100% 会把宽表格压扁换行，和横向滚动的目标互相打架。
+           也不要给表格加 auto 外边距：宽表格下 auto 会两侧溢出，
+           左半部分连滚都滚不回来（左右各裁一块，看着就是"不居中"） */
         .ds-virtual-list-items table {
             min-width: 100% !important;
             width: max-content !important;
             max-width: none !important;
             table-layout: auto !important;
         }
-        /* 宽表格横向滚动（纯 CSS，无需改写 React 的 DOM）
-           收窄到对话区，避免影响 DeepSeek 自身 UI 里的表格 */
-        .ds-virtual-list-items div:has(> table) {
-            overflow-x: auto !important;
+        /* 表格的祖先链：任何一层都不要被内容撑宽。
+           中间层只要是 flex/grid 项，它的自动最小尺寸（min-width:auto）就会被表格顶大，
+           整块溢出列宽，最后被更外层裁掉 —— 表现就是「后面的文字被裁剪」 */
+        .ds-virtual-list-items :has(table) {
+            min-width: 0 !important;
             max-width: 100% !important;
+        }
+        /* 表格的直接父元素 = 横向滚动视口。
+           必须排在上一条之后：同特异性靠后者生效，得把 overflow 抢回来。
+           align-self / justify-self 只为抵消外层「居中」——被居中的超宽元素
+           会向两侧溢出，左边那半同样滚不到。
+           .ai-table-wrap 是 JS 打的同一份标记：不依赖 :has 的支持，
+           也顺便修掉虚拟列表复用节点带来的残留滚动位置 */
+        .ds-virtual-list-items :has(> table),
+        .ds-virtual-list-items .ai-table-wrap {
+            width: 100% !important;
+            min-width: 0 !important;
+            max-width: 100% !important;
+            align-self: stretch !important;
+            justify-self: stretch !important;
+            overflow-x: auto !important;
+            overflow-y: hidden !important;
+            overscroll-behavior-x: contain !important;
+            scrollbar-width: thin;
+        }
+        /* 让「还能横向滚动」这件事可见：滚动条被藏起来时，
+           超宽表格看上去就只是被裁掉了。display:block 是为了盖掉站内的隐藏规则 */
+        .ds-virtual-list-items :has(> table)::-webkit-scrollbar,
+        .ds-virtual-list-items .ai-table-wrap::-webkit-scrollbar {
+            display: block !important;
+            height: 8px !important;
+        }
+        .ds-virtual-list-items :has(> table)::-webkit-scrollbar-thumb,
+        .ds-virtual-list-items .ai-table-wrap::-webkit-scrollbar-thumb {
+            background: rgba(128,128,128,0.45) !important;
+            border-radius: 4px !important;
         }
     `;
 
@@ -127,6 +160,47 @@
         style.id = 'ai-wide-enhancer-style';
         style.textContent = css.join('\n');
         document.head.appendChild(style);
+    }
+
+    /* ------------------------------------------------------------------ *
+     * 表格滚动容器
+     * ------------------------------------------------------------------ */
+
+    const TABLE_WRAP_CLASS = 'ai-table-wrap';
+
+    // 表格内部的父元素（td/th/tr 等），不能当滚动容器
+    const TABLE_INNER = /^(TABLE|THEAD|TBODY|TFOOT|TR|TD|TH|COLGROUP|COL)$/;
+
+    /**
+     * 给表格的直接父元素打上横向滚动容器的标记，并把残留的横向滚动位置归零。
+     *
+     * 样式里已经用 :has(> table) 覆盖了；这里再标一次，是为了在 :has 不被支持的
+     * 浏览器上也能生效 —— 这类选择器一旦静默失效，表格就只是「被裁掉」，
+     * 光看页面很难发现是哪条规则没起作用。
+     *
+     * 顺带把 scrollLeft 归零只是兜底：实测把节点 remove 再 append，
+     * Chromium 会把 scrollLeft 重置回 0，所以虚拟列表复用通常不需要这一手；
+     * 留着是为了防「就地换掉表格内容」这类不搬迁节点的重渲染路径。
+     */
+    function markTableWrappers(root) {
+        if (!root || typeof root.querySelectorAll !== 'function') return;
+        // 快速排除：整棵子树里没有表格就不必往下走
+        if (root.tagName !== 'TABLE' && !root.querySelector('table')) return;
+
+        const check = (table) => {
+            const wrap = table.parentElement;
+            if (!wrap || wrap === document.body) return;
+            if (TABLE_INNER.test(wrap.tagName)) return; // 嵌套表格：别动表格内部
+
+            if (!wrap.classList.contains(TABLE_WRAP_CLASS)) {
+                wrap.classList.add(TABLE_WRAP_CLASS);
+            }
+            // 兜底：万一旧滚动位置留了下来，表格会停在中间，两边都看不全
+            if (wrap.scrollLeft) wrap.scrollLeft = 0;
+        };
+
+        if (root.tagName === 'TABLE') check(root);
+        root.querySelectorAll('table').forEach(check);
     }
 
     /* ------------------------------------------------------------------ *
@@ -485,8 +559,6 @@
 
     function observeDOM() {
         const observer = new MutationObserver((mutations) => {
-            if (!CONFIG.collapseThinking || !IS_DS) return;
-
             const seen = new WeakSet(); // 单批次内去重，避免重复扫描同一子树
             let found = false;
 
@@ -494,8 +566,10 @@
                 for (const node of mutation.addedNodes) {
                     if (node.nodeType !== 1 || seen.has(node)) continue;
                     seen.add(node);
+                    // 表格滚动容器与折叠开关无关，始终补齐
+                    if (IS_DS) markTableWrappers(node);
                     // 包含已标记的复用节点：虚拟列表把节点搬到新消息上时也要重新判定
-                    if (hideThinkingEarly(node)) found = true;
+                    if (CONFIG.collapseThinking && IS_DS && hideThinkingEarly(node)) found = true;
                 }
             }
 
@@ -567,6 +641,8 @@
 
     function init() {
         injectStyles();
+
+        if (IS_DS) markTableWrappers(document.body); // 已渲染出来的表格先标一遍
 
         if (CONFIG.collapseThinking && IS_DS) {
             hideThinkingEarly(document.body);
