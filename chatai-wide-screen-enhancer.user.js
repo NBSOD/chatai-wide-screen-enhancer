@@ -1,8 +1,10 @@
 // ==UserScript==
 // @name         AI 宽屏优化
+// @name:zh-CN   DeepSeek 宽屏与思考折叠
+// @name:en      DeepSeek Wide Layout & Thinking Collapse
 // @namespace    https://github.com/NBSOD/chatai-wide-screen-enhancer
 // @author       NBSOD
-// @version      1.2.1
+// @version      1.2.2
 // @description  DeepSeek 网页端宽屏（四档可调）+ 表格显示优化 + 自动折叠深度思考
 // @match        *://chat.deepseek.com/*
 // @grant        GM_getValue
