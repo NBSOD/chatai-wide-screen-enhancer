@@ -8,6 +8,13 @@ DeepSeek 网页端宽屏（四档可调）+ 表格显示优化 + 自动折叠深
 - 📊 **表格加宽** — 表格自适应宽度，斑马纹 + 暗色适配
 - 🧠 **自动折叠深度思考** — DeepSeek 思考过程自动收起，只看最终回复，且不会在收起前闪现内容
 
+## 贡献与致谢
+
+- **NBSOD** — 项目发起、需求设计、代码审查与实际测试
+- **DeepSeek** — AI 协助编写与改进部分代码
+
+AI 生成的代码由项目维护者审查并在真实网页环境中验证。
+
 ## 安装
 
 需要浏览器安装 [Tampermonkey](https://www.tampermonkey.net/) / [ScriptCat](https://scriptcat.org/) 或 [Violentmonkey](https://violentmonkey.github.io/)，然后打开下方的脚本链接安装：
