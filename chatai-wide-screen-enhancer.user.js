@@ -2,8 +2,8 @@
 // @name         AI 宽屏优化
 // @namespace    https://github.com/NBSOD/chatai-wide-screen-enhancer
 // @author       NBSOD
-// @version      1.1.4
-// @description  DeepSeek 网页端宽屏 + 表格显示优化 + 自动折叠深度思考
+// @version      1.2.1
+// @description  DeepSeek 网页端宽屏（四档可调）+ 表格显示优化 + 自动折叠深度思考
 // @match        *://chat.deepseek.com/*
 // @grant        GM_getValue
 // @grant        GM_setValue
@@ -21,10 +21,35 @@
 (function () {
     'use strict';
 
-    const CONFIG = {
-        // 归一化：个别管理器可能把布尔值存成字符串 'false'（truthy），这里显式比对
-        collapseThinking: readSetting('collapseThinking', true) !== false,
+    // 宽度档位：值 → 内容区目标宽度。'100%' 表示铺满，两侧仅保留 24px 基础留白。
+    const WIDTH_PRESETS = {
+        narrow: { label: '窄', width: '760px' },
+        standard: { label: '标准', width: '960px' },
+        wide: { label: '宽', width: '1200px' },
+        full: { label: '全宽', width: '100%' },
     };
+
+    /**
+     * 布尔归一化。
+     * GM_getValue 的返回值不一定是布尔：有的管理器把 false 存成字符串 'false'，
+     * 直接用 `!== false` 判断会让字符串 'false' 变成 truthy，开关永远关不掉。
+     */
+    function normalizeBool(v, fallback) {
+        if (v === undefined || v === null) return fallback;
+        if (v === true || v === false) return v;
+        const s = String(v).trim().toLowerCase();
+        if (s === 'false' || s === '0' || s === 'no' || s === 'off') return false;
+        if (s === 'true' || s === '1' || s === 'yes' || s === 'on') return true;
+        return fallback;
+    }
+
+    const CONFIG = {
+        collapseThinking: normalizeBool(readSetting('collapseThinking', true), true),
+        contentWidth: readSetting('contentWidth', 'standard'),
+    };
+
+    // 档位值可能来自旧版本或被手改过，非法值回落到标准档
+    if (!WIDTH_PRESETS[CONFIG.contentWidth]) CONFIG.contentWidth = 'standard';
 
     function readSetting(key, fallback) {
         try {
@@ -55,10 +80,16 @@
      * ------------------------------------------------------------------ */
 
     // 宽屏：只作用于对话区，输入框 / 侧边栏不受影响
+    //
+    // 宽度档位用 padding 实现，而不是给子元素设 max-width + margin:auto：
+    // 虚拟列表的子元素盒模型被 DeepSeek 自己的布局依赖，动宽度容易连锁触发裁剪；
+    // padding 只缩窄「可用区」，不改变子元素的计算宽度，副作用最小。
+    // 全宽档 --ai-content-max: 100% 时 calc 得 0，max() 自动退化为 24px，
+    // 因此四档共用同一条公式。
     const WIDE_CSS = `
         .ds-virtual-list-items {
-            padding-left: 24px !important;
-            padding-right: 24px !important;
+            padding-left: max(24px, calc((100% - var(--ai-content-max, 960px)) / 2)) !important;
+            padding-right: max(24px, calc((100% - var(--ai-content-max, 960px)) / 2)) !important;
         }
         .ds-markdown, .md-content,
         .ds-virtual-list-items [class*="markdown"] {
@@ -84,13 +115,28 @@
            千万不要再去改它的 overflow、抢它的滚动条：那样只会和它自绘的滚动条打架
            （出现两条滚动条、--container-height 与实际高度对不上），越改越乱。
            实测：撑到 3000px 时，全靠它自己的滚动区就能滚到，虚拟列表零裁剪 */
-        .ds-virtual-list-items :has(> table) {
+        /* 双路修正，避免死依赖 :has()：
+           [data-ai-table-box] 由 JS 打标，任何浏览器都成立；
+           :has(> table) 放进 @supports —— 若与上面的规则写在同一个选择器列表里，
+           不支持 :has() 的浏览器会把整条规则一起丢弃，表现就是「不居中 + 右侧被裁」
+           且控制台一句提示都没有 */
+        .ds-virtual-list-items [data-ai-table-box] {
             box-sizing: border-box !important;
             width: 100% !important;
             max-width: 100% !important;
             min-width: 0 !important;
             margin-left: 0 !important;
             margin-right: 0 !important;
+        }
+        @supports selector(:has(*)) {
+            .ds-virtual-list-items :has(> table) {
+                box-sizing: border-box !important;
+                width: 100% !important;
+                max-width: 100% !important;
+                min-width: 0 !important;
+                margin-left: 0 !important;
+                margin-right: 0 !important;
+            }
         }
     `;
 
@@ -123,14 +169,33 @@
     `;
 
     // 折叠期间关闭滚动锚定，避免浏览器补偿布局位移导致页面跳动
+    //
+    // data-ai-pending：从「节点插入」到「点击折叠完成」之隔有 200ms 防抖窗口，
+    // 这段时间思考内容已经渲染出来，用户能看到一闪。这里在插入瞬间就把内容区
+    // 变透明，等折叠动作完成再撤掉属性，由 DeepSeek 自己的折叠态接管。
+    //
+    // 为什么用 opacity 而不是 display:none / visibility:hidden：
+    // probeCollapsed 靠 display / visibility / max-height / 高度 来判断是否收起，
+    // 用前两者预隐藏会把「展开」误判成「已折叠」，直接破坏状态机；
+    // opacity 不参与布局也不参与这些判定，是唯一无副作用的选项。
     const COLLAPSE_CSS = `
         [data-ai-hide-think] {
             overflow-anchor: none !important;
         }
+        [data-ai-pending] > *:nth-child(2) {
+            opacity: 0 !important;
+            pointer-events: none !important;
+        }
     `;
 
     function injectStyles() {
-        const css = [TABLE_CSS, WIDE_CSS];
+        // 宽度档位通过 CSS 变量注入，样式表本身保持静态
+        const preset = WIDTH_PRESETS[CONFIG.contentWidth] || WIDTH_PRESETS.standard;
+        const css = [
+            `:root { --ai-content-max: ${preset.width}; }`,
+            TABLE_CSS,
+            WIDE_CSS,
+        ];
         if (CONFIG.collapseThinking && IS_DS) css.push(COLLAPSE_CSS);
 
         const old = document.getElementById('ai-wide-enhancer-style');
@@ -142,21 +207,49 @@
         document.head.appendChild(style);
     }
 
+    /**
+     * 给表格外层容器打标，供 [data-ai-table-box] 规则生效。
+     * 不依赖 CSS :has()：旧浏览器会整条丢弃含 :has() 的规则，且不报错。
+     */
+    function markTableBoxes(root) {
+        if (!root || typeof root.querySelectorAll !== 'function') return;
+        const boxes = [];
+        if (root.tagName === 'TABLE' && root.parentElement) boxes.push(root.parentElement);
+        root.querySelectorAll('.ds-virtual-list-items table, .ds-markdown table, .md-content table')
+            .forEach(t => { if (t.parentElement) boxes.push(t.parentElement); });
+        boxes.forEach(box => {
+            if (!box.hasAttribute('data-ai-table-box')) box.setAttribute('data-ai-table-box', '1');
+        });
+    }
+
     /* ------------------------------------------------------------------ *
      * 折叠深度思考
      * ------------------------------------------------------------------ */
+
+    // 「已思考（用时 12 秒）」/「思考中」/「Thought for 12 seconds」/「Thinking」
+    const THINKING_LABEL = /思考|thought|thinking/i;
 
     const _releaseHandlers = new WeakMap(); // container -> 标题栏 click 处理器
     let _collapseTimer = null;
     let _selfClick = false;                 // 标记脚本自己触发的 click
     const _lastClick = new WeakMap();       // container -> 上次由脚本点击的时间戳
     const CLICK_COOLDOWN = 800;             // 冷却，杜绝「点击 → 重渲染 → 再点击」反馈环
+    const PENDING_FALLBACK_MS = 3000;       // 预隐藏最长保持时间，防止异常时内容永久不可见
+
+    /** 撤掉预隐藏，交还给折叠状态本身 */
+    function releasePending(container) {
+        if (container.hasAttribute('data-ai-pending')) {
+            container.removeAttribute('data-ai-pending');
+        }
+    }
 
     // 折叠时的滚动保持（见 toggleKeepingScroll）
     const BOTTOM_SLACK = 100;               // px，判定「是否停在最新内容处」的容差
     const ANCHOR_RESTORE_MS = 600;          // 折叠后多久恢复滚动锚定
     let _scroller = null;                   // 缓存的消息滚动容器
-    let _anchorGuardTimer = null;
+    // 每个滚动容器各自持有恢复定时器：用全局单例时，两次折叠会互相 clearTimeout，
+    // 前一个容器的 overflow-anchor 就永远恢复不回来
+    const _anchorTimers = new WeakMap();
 
     /** 定位标题栏末尾的 chevron 折叠按钮 */
     function findToggleButton(header) {
@@ -225,6 +318,7 @@
             if (_selfClick) return; // 脚本自己触发的折叠不算用户操作
             container.removeAttribute('data-ai-hide-think');
             container.removeAttribute('data-ai-collapsed');
+            container.removeAttribute('data-ai-pending');
             delete container.dataset.aiCollapsed;
             container.style.overflowAnchor = '';
             // 用户手动接管，连冷却状态一起复位
@@ -319,7 +413,8 @@
         if (scroller) {
             // 先关锚定：否则我们修好之后，浏览器会再按自己的判断拉走一次
             scroller.style.overflowAnchor = 'none';
-            clearTimeout(_anchorGuardTimer);
+            const pending = _anchorTimers.get(scroller);
+            if (pending) clearTimeout(pending);
         }
 
         if (!clickToggle(container, header)) {
@@ -348,9 +443,11 @@
         requestAnimationFrame(() => requestAnimationFrame(settle));
 
         if (scroller) {
-            _anchorGuardTimer = setTimeout(() => {
+            const timer = setTimeout(() => {
+                _anchorTimers.delete(scroller);
                 if (scroller.isConnected) scroller.style.overflowAnchor = '';
             }, ANCHOR_RESTORE_MS);
+            _anchorTimers.set(scroller, timer);
         }
         return true;
     }
@@ -369,12 +466,16 @@
 
         let found = false;
 
+        // 输入区只可能在同一棵子树里，全树查一次即可。
+        // 放在循环里会让每层 div 各做一次子树查询，流式输出下退化成 O(n²)。
+        const inputHost = root.querySelector('textarea, input, [contenteditable="true"]');
+
         const check = (el) => {
             if (el.children.length < 2) return;
             // 输入框的「深度思考 / 智能搜索」切换按钮，不能碰
             if (el.classList.contains('ds-toggle-button')) return;
             // 输入区域（含输入控件 / 可编辑元素）不碰
-            if (el.querySelector('textarea, input, [contenteditable="true"]')) return;
+            if (inputHost && el.contains(inputHost)) return;
 
             const first = el.children[0];
             // .ds-icon 必须是直接子级，避免误伤弹窗（弹窗的图标在按钮里）
@@ -383,14 +484,18 @@
             // 标题应当是短标签，而不是含「思考」字样的长段落
             // （原实现只做 includes('思考')，任何带图标又提到「思考」的容器都会中招）
             const label = (first.textContent || '').trim();
-            if (!label.includes('思考') || label.length > 30) return;
+            if (!THINKING_LABEL.test(label) || label.length > 30) return;
 
             found = true;
             // 已经标记过：可能只是节点被复用，仍需让调用方重新判定一次状态
             if (el.hasAttribute('data-ai-hide-think')) return;
 
             el.setAttribute('data-ai-hide-think', '1');
+            // 插入即隐：避开 200ms 防抖窗口里「先看到内容再被折叠」的闪现
+            el.setAttribute('data-ai-pending', '1');
             el.style.overflowAnchor = 'none';
+            // 兜底：找不到折叠按钮等异常时恢复显示，不让内容永久消失
+            setTimeout(() => releasePending(el), PENDING_FALLBACK_MS);
         };
 
         if (root.tagName === 'DIV') check(root);
@@ -405,6 +510,7 @@
         document.querySelectorAll('.ds-toggle-button[data-ai-hide-think]').forEach(el => {
             el.removeAttribute('data-ai-hide-think');
             el.removeAttribute('data-ai-collapsed');
+            el.removeAttribute('data-ai-pending');
             delete el.dataset.aiCollapsed;
         });
 
@@ -414,9 +520,13 @@
             if (container.classList.contains('ds-toggle-button')) return;
 
             const header = container.children[0];
-            if (!header) return;
+            if (!header) {
+                releasePending(container);
+                return;
+            }
 
             // 冷却：脚本刚点过就不再点，避免「点击 → 重渲染 → 再点击」的反馈环
+            // 预隐藏保持到下一轮处理，不在这里撤
             if (now - (_lastClick.get(container) || 0) < CLICK_COOLDOWN) return;
 
             const expanded = readExpanded(container);
@@ -424,11 +534,13 @@
             // 权威状态：明确展开就折叠（节点被复用也能正确处理）
             if (expanded === true) {
                 toggleKeepingScroll(container, header);
+                releasePending(container);
                 return;
             }
             // 权威状态：明确已折叠，只补标记，不重复点击
             if (expanded === false) {
                 container.dataset.aiCollapsed = '1';
+                releasePending(container);
                 return;
             }
 
@@ -437,16 +549,22 @@
             const probed = probeCollapsed(container);
             if (probed === 'collapsed') {
                 container.dataset.aiCollapsed = '1';
+                releasePending(container);
                 return;
             }
             if (probed === 'expanded') {
                 toggleKeepingScroll(container, header);
+                releasePending(container);
                 return;
             }
 
             // 布局也判断不出来时，才退回自维护标记
-            if (container.dataset.aiCollapsed === '1') return;
+            if (container.dataset.aiCollapsed === '1') {
+                releasePending(container);
+                return;
+            }
             toggleKeepingScroll(container, header);
+            releasePending(container);
         });
     }
 
@@ -456,6 +574,7 @@
 
         container.removeAttribute('data-ai-hide-think');
         container.removeAttribute('data-ai-collapsed');
+        container.removeAttribute('data-ai-pending');
         delete container.dataset.aiCollapsed;
         container.style.overflowAnchor = '';
         // 一并清掉冷却：teardown 刚点过（展开），紧接着就要能重新折叠，
@@ -498,8 +617,6 @@
 
     function observeDOM() {
         const observer = new MutationObserver((mutations) => {
-            if (!CONFIG.collapseThinking || !IS_DS) return;
-
             const seen = new WeakSet(); // 单批次内去重，避免重复扫描同一子树
             let found = false;
 
@@ -507,11 +624,15 @@
                 for (const node of mutation.addedNodes) {
                     if (node.nodeType !== 1 || seen.has(node)) continue;
                     seen.add(node);
+                    // 表格标记与折叠开关无关，必须在下面的 guard 之前执行
+                    markTableBoxes(node);
                     // 包含已标记的复用节点：虚拟列表把节点搬到新消息上时也要重新判定
                     if (hideThinkingEarly(node)) found = true;
                 }
             }
 
+            // 折叠逻辑依赖开关；关闭时到此为止，不影响表格标记
+            if (!CONFIG.collapseThinking || !IS_DS) return;
             // 没有发现思考容器就不必跑后续流程
             if (!found) return;
             clearTimeout(_collapseTimer);
@@ -551,6 +672,19 @@
                 }
             ));
 
+            // 宽度档位：一次注册四档，当前档带 ✅
+            Object.entries(WIDTH_PRESETS).forEach(([key, preset]) => {
+                ids.push(GM_registerMenuCommand(
+                    `↔️ 内容宽度：${preset.label}${CONFIG.contentWidth === key ? ' ✅' : ''}`,
+                    () => {
+                        CONFIG.contentWidth = key;
+                        writeSetting('contentWidth', key);
+                        refreshStyles();
+                        updateMenu();
+                    }
+                ));
+            });
+
             if (CONFIG.collapseThinking && IS_DS) {
                 ids.push(GM_registerMenuCommand('🔄 重置折叠状态', () => {
                     teardownThinking();
@@ -580,6 +714,7 @@
 
     function init() {
         injectStyles();
+        markTableBoxes(document.body);
 
         if (CONFIG.collapseThinking && IS_DS) {
             hideThinkingEarly(document.body);
